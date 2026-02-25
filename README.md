@@ -8,22 +8,24 @@
 
 ### 1. 複製專案 (Clone)
 ```bash
-git clone <你的儲存庫網址>
+git clone https://github.com/A6ee/note-app-v1.git
 cd lecture-note-app
-
-###2. 安裝套件
+```
+### 2. 安裝套件
 ```bash
 npm install
-3. 設定 API Key (重要！)
+```
+### 3. 設定 API Key 
 在專案根目錄手動建立一個檔案，命名為 .env。
 
 在檔案內輸入以下內容（請填入你自己的 Gemini API Key）：
-
-程式碼片段
+```bash
 VITE_GEMINI_API_KEY=你的_API_KEY
+```
 註：如果你還沒有 Key，請至 Google AI Studio 申請。
 
-4. 啟動開發伺服器
+### 4. 啟動開發伺服器
 ```bash
 npm run dev
+```
 啟動後，開啟瀏覽器訪問 http://localhost:5173 即可開始調試。
