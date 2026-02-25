@@ -1,0 +1,14 @@
+# 排除環境變數檔案（最重要的！）
+.env
+.env.local
+.env.*
+
+# 排除套件資料夾（節省空間）
+node_modules/
+
+# 排除編譯後的產出（Vite 產生）
+dist/
+
+# 排除作業系統產生的雜物
+.DS_Store
+Thumbs.db
