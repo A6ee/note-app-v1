@@ -230,7 +230,8 @@
                         class="bg-transparent border-none outline-none px-3 py-2 text-xs w-full font-bold text-gray-600 placeholder-gray-300">
                 </div>
             </header>
-
+            <div id="category-filter-container" class="px-6 mb-4 flex gap-2 overflow-x-auto no-scrollbar py-2">
+                </div>
             <div class="px-6 mt-4">
                 <div class="flex p-1 bg-gray-100 rounded-full mb-6">
                     <button onclick="switchListView('note')" id="list-tab-note" class="tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-xs font-black shadow-md">AI 即時</button>
@@ -380,6 +381,32 @@
         </div>
     </div>
     <script type="module">
+        //新增標籤篩選器
+        let currentFilterCategory = "全部";
+        function renderCategoryFilters() {
+            const container = document.getElementById('category-filter-container');
+            if (!container) return;
+
+            // 1. 從所有筆記中提取不重複的分類
+            const allCategories = ["全部", ...new Set(notesLibrary.map(n => n.category || "未分類"))];
+
+            container.innerHTML = "";
+            allCategories.forEach(cat => {
+                const isActive = currentFilterCategory === cat;
+                const btn = document.createElement('button');
+                // 設定樣式：選中時變青綠色，未選中時為灰色
+                btn.className = `px-4 py-1.5 rounded-full text-[10px] font-black whitespace-nowrap transition-all border ${
+                    isActive ? 'bg-[#13B5B1] text-white border-[#13B5B1] shadow-md' : 'bg-gray-50 text-gray-400 border-gray-100'
+                }`;
+                btn.innerText = cat;
+                btn.onclick = () => {
+                    currentFilterCategory = cat;
+                    renderCategoryFilters(); // 重新渲染篩選器樣式
+                    renderNotesList();       // 執行列表過濾
+                };
+                container.appendChild(btn);
+            });
+        }
         /**
          * 1. 環境設定與變數 (支援 Vite .env)
          */
@@ -420,6 +447,9 @@
         // ✨ 新增：同步資料到 localStorage
         function saveNotesToDisk() {
             localStorage.setItem('president_notes', JSON.stringify(notesLibrary));
+            if (document.getElementById('page-list').classList.contains('hidden') === false) {
+                renderCategoryFilters();
+            }
         }
         function initRecognition() {
             if (!('webkitSpeechRecognition' in window)) return;
@@ -496,10 +526,13 @@
             const searchTerm = document.getElementById('search-input')?.value.toLowerCase() || "";
             container.innerHTML = "";
 
-            // ✨ 根據關鍵字過濾
-            const filteredNotes = notesLibrary.filter(note => 
-                note.title.toLowerCase().includes(searchTerm)
-            );
+            // ✨ 同時根據關鍵字與標籤過濾
+            const filteredNotes = notesLibrary.filter(note => {
+                const matchesSearch = note.title.toLowerCase().includes(searchTerm);
+                const noteCat = note.category || "未分類";
+                const matchesCategory = (currentFilterCategory === "全部") || (noteCat === currentFilterCategory);
+                return matchesSearch && matchesCategory;
+            });
 
             if (filteredNotes.length === 0) {
                 container.innerHTML = `<div class="text-center py-10 text-gray-300 text-xs font-bold">找不到相關筆記 😮‍💨</div>`;
@@ -751,13 +784,16 @@
                 const nav = document.getElementById('main-nav');
                 if (pageId === 'page-record' || pageId === 'page-loading') nav.classList.add('hidden');
                 else nav.classList.remove('hidden');
-                if (pageId === 'page-list') renderNotesList();
+                if (pageId === 'page-list') {
+                    renderCategoryFilters(); // 1. 先畫出標籤列
+                    renderNotesList();       // 2. 再畫出筆記清單
+                }
             },
             loadNoteDetails: (id) => {
                 const note = notesLibrary.find(n => n.id === id);
                 if (note) { currentNoteData = note; renderNoteUI(note); window.navigateTo('page-content'); }
             },
-            startRecordPage, stopRecording, generateQuiz, expandContent, exportToPDF,editNoteTitle,changeCategory,
+            startRecordPage, stopRecording, generateQuiz, expandContent, exportToPDF,editNoteTitle,changeCategory,renderCategoryFilters,
             cancelRecording: () => { isRecording = false; if (recognition) recognition.stop(); clearInterval(timerInterval); window.navigateTo('page-list'); },
             closeModal: () => document.getElementById('ai-modal').style.display = 'none',
             closeConfirmModal: () => document.getElementById('confirm-modal').style.display = 'none',
