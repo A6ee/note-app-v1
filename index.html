@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>LectureNote MVP - High Fidelity AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
@@ -302,8 +303,9 @@
             <div class="px-6 pt-4 pb-2 bg-white">
                 <header class="flex justify-between items-center mb-6">
                     <div onclick="navigateTo('page-list')" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400 cursor-pointer"><i class="fas fa-chevron-left"></i></div>
-                    <h1 id="content-title" class="text-sm font-black text-gray-800 truncate px-4">課堂摘要</h1>
-                    <div class="w-10 h-10 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400"><i class="fas fa-ellipsis-h"></i></div>
+                        <h1 id="content-title" onclick="editNoteTitle()" class="text-sm font-black text-gray-800 truncate px-4 text-center flex-1 cursor-pointer hover:bg-gray-100 rounded-lg">課堂摘要</h1>                    <div onclick="exportToPDF()" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-[#13B5B1]/10 text-[#13B5B1] cursor-pointer">
+                        <i class="fas fa-file-export"></i>
+                    </div>
                 </header>
 
                 <div class="flex p-1 bg-gray-100 rounded-full mb-2">
@@ -318,9 +320,19 @@
                     <div id="ai-intro-text" class="bg-white border border-gray-100 p-4 rounded-2xl rounded-tl-none text-sm text-gray-700 shadow-sm font-medium leading-relaxed">總裁已經為您準備好筆記了！</div>
                 </div>
                 <div id="note-cards-container"></div>
-                <div class="flex gap-2 mt-4 pb-12">
-                    <button onclick="generateQuiz()" class="flex-1 py-3 bg-white border border-brand text-brand rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">✨ 智能複習測驗</button>
-                    <button onclick="expandContent()" class="flex-1 py-3 bg-white border border-brand text-brand rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">✨ 擴充學習建議</button>
+                <div class="flex flex-col gap-2 mt-4 pb-12">
+                    <button onclick="generateQuiz()" class="w-full py-3 bg-white border border-brand text-brand rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+                        ✨ 智能複習測驗
+                    </button>
+                    
+                    <div class="flex gap-2">
+                        <button onclick="changeCategory()" class="flex-1 py-3 bg-white border border-orange-400 text-orange-500 rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+                            🏷️ 切換分類
+                        </button>
+                        <button onclick="expandContent()" class="flex-1 py-3 bg-white border border-brand text-brand rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+                            📚 擴充建議
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -499,10 +511,18 @@
                 div.className = "bg-white border border-gray-50 p-5 rounded-[2.5rem] shadow-sm mb-4 cursor-pointer relative";
                 div.innerHTML = `
                     <div onclick="loadNoteDetails('${note.id}')">
-                        <div class="font-black text-gray-800 text-sm leading-snug">${note.title}</div>
+                        <div class="flex justify-between items-start mb-1">
+                            <div class="font-black text-gray-800 text-sm leading-snug flex-1">${note.title}</div>
+                            <span class="ml-2 px-2 py-0.5 bg-[#13B5B1]/10 text-[#13B5B1] text-[9px] rounded-full font-black whitespace-nowrap">
+                                ${note.category || '未分類'}
+                            </span>
+                        </div>
+                        
                         <div class="flex justify-between items-center mt-6">
                             <span class="text-[8px] text-gray-300 font-black tracking-widest uppercase">DATE: ${note.date}</span>
-                            <button onclick="confirmDelete('${note.id}', event)" class="w-8 h-8 bg-red-50 text-red-400 rounded-xl flex items-center justify-center"><i class="fas fa-trash-alt text-[10px]"></i></button>
+                            <button onclick="confirmDelete('${note.id}', event)" class="w-8 h-8 bg-red-50 text-red-400 rounded-xl flex items-center justify-center">
+                                <i class="fas fa-trash-alt text-[10px]"></i>
+                            </button>
                         </div>
                     </div>`;
                 container.appendChild(div);
@@ -538,7 +558,7 @@
             try {
                 const data = await callGemini(prompt, schema);
                 const result = JSON.parse(data.candidates[0].content.parts[0].text);
-                const newNote = { ...result, id: "note-" + Date.now(), date: (new Date().getMonth()+1) + " / " + new Date().getDate(), duration: durationText };
+                const newNote = { ...result, id: Date.now().toString(),title: "新筆記",category: "未分類", date: (new Date().getMonth()+1) + " / " + new Date().getDate(), duration: durationText };
                 
                 notesLibrary.unshift(newNote); // 加入記憶體
                 saveNotesToDisk();           // ✨ 新增：同步存入硬碟
@@ -638,6 +658,89 @@
             } catch (err) { document.getElementById('modal-content').innerHTML = "獲取失敗。"; }
         }
 
+        async function exportToPDF() {
+            const element = document.getElementById('view-note'); // 我們要匯出的區塊
+            const title = document.getElementById('content-title').innerText;
+            
+            // 設定 PDF 選項
+            const opt = {
+                margin:       10,
+                filename:     `${title}.pdf`,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            // 顯示載入中提示
+            showModal("✨ 總裁正在為您裝訂 PDF...");
+
+            try {
+                await html2pdf().set(opt).from(element).save();
+                closeModal();
+            } catch (err) {
+                alert("匯出失敗，請再試一次。");
+                closeModal();
+            }
+        }
+
+        function editNoteTitle() {
+            const newTitle = prompt("請輸入新的筆記標題：", currentNoteData.title);
+            if (newTitle && newTitle.trim() !== "") {
+                // 1. 更新記憶體中的數據
+                currentNoteData.title = newTitle.trim();
+                document.getElementById('content-title').innerText = newTitle.trim();
+                
+                // 2. 更新資料庫 (notesLibrary) 中的該筆資料
+                const noteIndex = notesLibrary.findIndex(n => n.id === currentNoteData.id);
+                if (noteIndex !== -1) {
+                    notesLibrary[noteIndex].title = newTitle.trim();
+                    saveNotesToDisk(); // 存入 localStorage
+                    renderNotesList(); // 更新列表頁面，讓改名立刻生效
+                }
+            }
+        }
+
+        function changeCategory() {
+            const categories = ["心理學", "生物學", "通識課", "待處理"];
+            
+            let html = `
+                <h3 class="text-lg font-black mb-4 text-gray-800 flex items-center gap-2">
+                    <i class="fas fa-tag text-[#13B5B1]"></i> 選擇分類
+                </h3>
+                <div class="grid grid-cols-2 gap-2 mb-6">
+            `;
+            
+            categories.forEach(cat => {
+                const isActive = currentNoteData.category === cat;
+                html += `
+                    <button onclick="setCategory('${cat}')" 
+                        class="py-2.5 px-1 text-center font-bold text-[11px] rounded-2xl border transition-all leading-tight
+                        ${isActive ? 'bg-[#13B5B1] text-white border-[#13B5B1]' : 'bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100'}">
+                        ${cat}
+                    </button>`;
+            });
+            
+            html += `</div>`;
+
+            // ✨ 這裡改成上下堆疊佈局，徹底解決擁擠問題
+            html += `
+                <div class="border-t border-gray-100 pt-4 mb-2">
+                    <p class="text-[9px] text-gray-400 font-black mb-3 uppercase tracking-widest text-center">或是建立新分類</p>
+                    <div class="flex flex-col gap-3">
+                        <input type="text" id="new-cat-input" placeholder="請輸入新分類名稱..." 
+                            class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-[#13B5B1] text-center">
+                        <button onclick="setCategory(document.getElementById('new-cat-input').value)" 
+                            class="w-full bg-[#13B5B1] text-white py-3 rounded-xl text-xs font-black shadow-md active:scale-95 transition-all">
+                            ＋ 新增並套用
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('modal-content').innerHTML = html;
+            document.getElementById('ai-modal').style.display = 'flex';
+        }
+
         /**
          * 6. 全域掛載與初始化
          */
@@ -654,7 +757,7 @@
                 const note = notesLibrary.find(n => n.id === id);
                 if (note) { currentNoteData = note; renderNoteUI(note); window.navigateTo('page-content'); }
             },
-            startRecordPage, stopRecording, generateQuiz, expandContent,
+            startRecordPage, stopRecording, generateQuiz, expandContent, exportToPDF,editNoteTitle,changeCategory,
             cancelRecording: () => { isRecording = false; if (recognition) recognition.stop(); clearInterval(timerInterval); window.navigateTo('page-list'); },
             closeModal: () => document.getElementById('ai-modal').style.display = 'none',
             closeConfirmModal: () => document.getElementById('confirm-modal').style.display = 'none',
@@ -686,6 +789,8 @@
                 document.getElementById('tab-note').className = isNote ? "tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-xs font-black shadow-md" : "tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-xs font-black";
                 document.getElementById('tab-transcript').className = !isNote ? "tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-xs font-black shadow-md" : "tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-xs font-black";
             }
+            
+
         });
 
         window.onload = () => {
