@@ -223,8 +223,10 @@
                     <i class="fas fa-chevron-left"></i>
                 </div>
                 <h1 class="text-xl font-black text-gray-800 tracking-tight">課堂記錄</h1>
-                <div class="w-10 h-10 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400">
-                    <i class="fas fa-search"></i>
+                <div class="flex items-center bg-gray-50 rounded-2xl px-3 flex-1 ml-4 border border-gray-100 focus-within:border-[#13B5B1] transition-all">
+                    <i class="fas fa-search text-gray-300 text-xs"></i>
+                    <input type="text" id="search-input" placeholder="搜尋筆記標題..." 
+                        class="bg-transparent border-none outline-none px-3 py-2 text-xs w-full font-bold text-gray-600 placeholder-gray-300">
                 </div>
             </header>
 
@@ -373,7 +375,7 @@
         let timerInterval, seconds = 0, recognition, fullTranscript = "", isRecording = false;
 
         // 完整的模擬資料庫
-        let notesLibrary = [
+        let notesLibrary = JSON.parse(localStorage.getItem('president_notes')) || [
             {
                 id: "note-2-1",
                 title: "2.1 腦部睡眠中樞的研究與定位",
@@ -403,6 +405,10 @@
         /**
          * 2. 核心 API 功能
          */
+        // ✨ 新增：同步資料到 localStorage
+        function saveNotesToDisk() {
+            localStorage.setItem('president_notes', JSON.stringify(notesLibrary));
+        }
         function initRecognition() {
             if (!('webkitSpeechRecognition' in window)) return;
             recognition = new window.webkitSpeechRecognition();
@@ -415,6 +421,10 @@
                     if (event.results[i].isFinal) fullTranscript += event.results[i][0].transcript;
                     else interim += event.results[i][0].transcript;
                 }
+                
+                // ✨ 新增：將進度存入 localStorage，防止當機
+                localStorage.setItem('temp_transcript', fullTranscript);
+                
                 document.getElementById('live-transcript').innerText = (fullTranscript + interim) || "總裁正在聽課...";
             };
             recognition.onend = () => { if (isRecording) recognition.start(); };
@@ -471,8 +481,20 @@
 
         function renderNotesList() {
             const container = document.getElementById('list-container');
+            const searchTerm = document.getElementById('search-input')?.value.toLowerCase() || "";
             container.innerHTML = "";
-            notesLibrary.forEach(note => {
+
+            // ✨ 根據關鍵字過濾
+            const filteredNotes = notesLibrary.filter(note => 
+                note.title.toLowerCase().includes(searchTerm)
+            );
+
+            if (filteredNotes.length === 0) {
+                container.innerHTML = `<div class="text-center py-10 text-gray-300 text-xs font-bold">找不到相關筆記 😮‍💨</div>`;
+                return;
+            }
+
+            filteredNotes.forEach(note => {
                 const div = document.createElement('div');
                 div.className = "bg-white border border-gray-50 p-5 rounded-[2.5rem] shadow-sm mb-4 cursor-pointer relative";
                 div.innerHTML = `
@@ -517,10 +539,17 @@
                 const data = await callGemini(prompt, schema);
                 const result = JSON.parse(data.candidates[0].content.parts[0].text);
                 const newNote = { ...result, id: "note-" + Date.now(), date: (new Date().getMonth()+1) + " / " + new Date().getDate(), duration: durationText };
-                notesLibrary.unshift(newNote);
+                
+                notesLibrary.unshift(newNote); // 加入記憶體
+                saveNotesToDisk();           // ✨ 新增：同步存入硬碟
+                
                 window.loadNoteDetails(newNote.id);
+                
+                // ✨ 新增：整理成功後清除本地暫存
+                localStorage.removeItem('temp_transcript');
+                
             } catch (err) {
-                alert("生成失敗，返回清單。");
+                alert("生成失敗，但逐字稿已為您暫存。");
                 window.navigateTo('page-list');
             }
         }
@@ -633,7 +662,8 @@
                 event.stopPropagation();
                 document.getElementById('confirm-modal').style.display = 'flex';
                 document.getElementById('btn-real-delete').onclick = () => {
-                    notesLibrary = notesLibrary.filter(n => n.id !== id);
+                    notesLibrary = notesLibrary.filter(n => n.id !== id); // 從記憶體移除
+                    saveNotesToDisk();                                   // ✨ 新增：同步存入硬碟
                     renderNotesList();
                     window.closeConfirmModal();
                 };
@@ -661,6 +691,23 @@
         window.onload = () => {
             initRecognition();
             document.getElementById('status-time').innerText = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false});
+            document.getElementById('search-input')?.addEventListener('input', renderNotesList);
+
+            // ✨ 修改後的恢復邏輯
+            const savedData = localStorage.getItem('temp_transcript');
+            if (savedData && savedData.length > 0) {
+                if (confirm("偵測到上次有未完成的錄音，總裁要為您恢復並整理成筆記嗎？")) {
+                    fullTranscript = savedData;
+                    // 先跳轉到 loading，再執行 stopRecording
+                    window.navigateTo('page-loading');
+                    stopRecording(); 
+                    return; // 結束 onload，不要再執行後面的 navigateTo('page-home')
+                } else {
+                    localStorage.removeItem('temp_transcript');
+                }
+            }
+
+            // 只有在沒有要恢復錄音時，才主動跳轉到首頁
             window.navigateTo('page-home');
         };
     </script>
