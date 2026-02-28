@@ -70,16 +70,7 @@ body {
     overflow: hidden;
 }
 
-.phone-container {
-    width: 375px;
-    height: 812px;
-    background: white;
-    position: relative;
-    box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.4);
-    overflow: hidden;
-    border-radius: 48px;
-    border: 10px solid #1a1a1a;
-}
+
 
 .page {
     position: absolute;
