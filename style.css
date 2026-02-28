@@ -1,4 +1,42 @@
 /* style.css */
+/* 1. 基本設定：在電腦等大螢幕上顯示擬真手機框 */
+.phone-container {
+    width: 375px;
+    height: 812px;
+    background: white;
+    position: relative;
+    box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+    border-radius: 48px;
+    border: 10px solid #1a1a1a; /* 黑色外框 */
+    margin: 20px auto; /* 桌面端置中 */
+    transition: all 0.3s ease;
+}
+
+/* 2. ✨ 關鍵修正：當螢幕寬度小於 500px 時 (即手機瀏覽器) */
+@media (max-width: 500px) {
+    body {
+        background-color: white; /* 手機端背景改純白 */
+        padding: 0;
+        margin: 0;
+        display: block; /* 取消 flex 置中 */
+        height: 100%;
+    }
+
+    .phone-container {
+        width: 100%;       /* 寬度填滿 */
+        height: 100vh;     /* 高度填滿整個視窗 */
+        border: none;      /* 移除黑色外框 */
+        border-radius: 0;  /* 移除圓角 */
+        margin: 0;         /* 移除邊距 */
+        box-shadow: none;  /* 移除陰影 */
+    }
+
+    /* 調整狀態欄間距以符合現代手機劉海 */
+    .flex.justify-between.items-center.px-8.py-3 {
+        padding-top: env(safe-area-inset-top, 20px); 
+    }
+}
 
 /* 1. 設定文字字體，但避開 FontAwesome 圖示 */
 body, input, button, select, textarea {
