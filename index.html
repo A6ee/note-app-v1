@@ -1,302 +1,315 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>認知破壞終結者 ✨</title>
-    
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>認知破壞終結者 ✨</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+  <link rel="stylesheet" href="style.css" />
 </head>
+
 <body class="bg-gray-100">
-    <div class="phone-container">
-        <!-- 狀態欄 -->
-        <div class="flex justify-between items-center px-8 py-3 text-[11px] font-bold z-50 bg-white">
-            <span id="status-time">09:41</span>
-            <div class="flex gap-1.5 items-center">
-                <i class="fas fa-signal"></i>
-                <i class="fas fa-wifi"></i>
-                <i class="fas fa-battery-full"></i>
-            </div>
-        </div>
-
-        <!-- 0. 首頁 (Home Page) -->
-        <div id="page-home" class="page overflow-y-auto no-scrollbar">
-            <div class="px-6 pt-6 pb-24">
-                <header class="flex justify-between items-center mb-8">
-                    <div>
-                        <p class="text-[10px] text-gray-300 font-black tracking-widest uppercase mb-1">DASHBOARD</p>
-                        <h2 class="text-2xl font-black text-gray-800">總裁 您好 ✨</h2>
-                    </div>
-                    <div class="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center border border-gray-100 overflow-hidden">
-                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="President">
-                    </div>
-                </header>
-
-                <div class="flex items-end gap-3 mb-10">
-                    <div class="relative flex-shrink-0">
-                        <div class="w-14 h-18 bg-gray-100 rounded-b-xl overflow-hidden border-2 border-white shadow-md">
-                            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Felix" class="w-full h-full" alt="Assistant">
-                        </div>
-                        <div class="absolute -bottom-1 left-0 right-0 bg-white border border-[#13B5B1]/20 text-[8px] text-[#13B5B1] py-0.5 text-center font-black rounded-full">總裁助手</div>
-                    </div>
-                    <div class="bg-[#F0F9F9] border border-[#13B5B1]/10 rounded-3xl rounded-bl-none p-4 flex-1 shadow-sm">
-                        <p class="text-[11px] text-[#13B5B1] font-bold leading-relaxed">
-                            今天想學習什麼？我已經為您的課程準備好了錄音與分析功能。
-                        </p>
-                    </div>
-                </div>
-
-            <div class="grid grid-cols-2 gap-4 mb-8">
-                <div onclick="navigateTo('page-list')" class="home-grid-card">
-                    <div class="w-12 h-12 bg-cyan-50 text-[#13B5B1] rounded-2xl flex items-center justify-center mb-1">
-                        <i class="fas fa-book-open"></i>
-                    </div>
-                    <h4>課堂筆記</h4>
-                    <p class="uppercase">Notes</p>
-                </div>
-
-                <div class="home-grid-card opacity-50">
-                    <div class="w-12 h-12 bg-gray-50 text-gray-400 rounded-2xl flex items-center justify-center mb-1">
-                        <i class="fas fa-file-alt"></i>
-                    </div>
-                    <h4>純逐字稿</h4>
-                    <p class="uppercase">Transcripts</p>
-                </div>
-
-                <div class="home-grid-card opacity-50">
-                    <div class="w-12 h-12 bg-orange-50 text-orange-400 rounded-2xl flex items-center justify-center mb-1">
-                        <i class="fas fa-graduation-cap"></i>
-                    </div>
-                    <h4>智能複習</h4>
-                    <p class="uppercase">Review</p>
-                </div>
-
-                <div onclick="navigateTo('page-trash')" class="home-grid-card">
-                    <div class="w-12 h-12 bg-red-50 text-red-400 rounded-2xl flex items-center justify-center mb-1">
-                        <i class="fas fa-trash-alt"></i>
-                    </div>
-                    <h4>回收站</h4>
-                    <p class="uppercase">Trash</p>
-                </div>
-            </div>
-
-                <button onclick="startRecordPage()" class="w-full bg-[#13B5B1] text-white py-5 rounded-[2.5rem] font-black text-sm shadow-xl shadow-[#13B5B1]/20 flex items-center justify-center gap-3 active:scale-95 transition-all">
-                    <i class="fas fa-microphone-alt text-lg"></i> 開始新錄音
-                </button>
-            </div>
-        </div>
-
-        <!-- 1. 列表頁面 -->
-        <div id="page-list" class="page hidden overflow-y-auto no-scrollbar">
-            
-            <div class="sticky top-0 z-30 bg-white shadow-sm">
-                <header class="flex items-center gap-3 px-6 pt-6 pb-4">
-                    <div onclick="navigateTo('page-home')" class="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400 cursor-pointer active:scale-90 transition-all">
-                        <i class="fas fa-chevron-left text-xs"></i>
-                    </div>
-                    <h1 class="text-lg font-black text-gray-800 whitespace-nowrap">課堂記錄</h1>
-                    
-                    <div class="flex items-center bg-gray-50 rounded-2xl px-3 flex-1 border border-gray-50 focus-within:border-[#13B5B1] focus-within:bg-white transition-all">
-                        <i class="fas fa-search text-gray-300 text-xs"></i>
-                        <input type="text" id="search-input" placeholder="搜尋..." 
-                            class="bg-transparent border-none outline-none px-2 py-2 text-xs w-full font-bold text-gray-600">
-                    </div>
-                </header>
-
-                <div class="px-6 py-2 border-b border-gray-50 flex items-center justify-between bg-white/95 backdrop-blur-sm">
-                    <div class="flex gap-4">
-                        <span onclick="filterNotes('all')" id="filter-all" class="text-xs font-black text-[#13B5B1] cursor-pointer border-b-2 border-[#13B5B1] pb-1 transition-all">全部</span>
-                        <span onclick="filterNotes('fav')" id="filter-fav" class="text-xs font-black text-gray-300 cursor-pointer pb-1 transition-all">★ 我的收藏</span>
-                    </div>
-                    
-                    <div id="category-filter-container"></div>
-                </div>
-            </div>
-
-            <div class="px-6 pt-6 pb-40">
-                <div class="flex p-1 bg-gray-100 rounded-full mb-8">
-                    <button onclick="switchListView('note')" id="list-tab-note" class="tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-[10px] font-black shadow-md">AI 即時</button>
-                    <button onclick="switchListView('transcript')" id="list-tab-transcript" class="tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-[10px] font-black">逐字稿</button>
-                </div>
-
-                <div id="list-container" class="space-y-6">
-                    </div>
-            </div>
-
-            <div class="absolute bottom-24 left-6 right-6 flex items-end z-20">
-                <div class="relative flex-shrink-0">
-                    <div class="w-16 h-20 bg-gray-100 rounded-b-xl overflow-hidden border-2 border-white shadow-lg">
-                        <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Felix" class="w-full h-full" alt="AI">
-                    </div>
-                    <div class="absolute -bottom-1 left-0 right-0 bg-white border border-[#13B5B1]/20 text-[8px] text-[#13B5B1] py-0.5 text-center font-black rounded-full shadow-sm">總裁助理</div>
-                </div>
-                <div class="ml-3 mb-2 bg-[#F0F9F9] p-4 rounded-3xl rounded-bl-none flex-1 text-[11px] text-[#13B5B1] font-bold border border-[#13B5B1]/10 shadow-sm relative pr-12">
-                    想錄製新課堂嗎？點擊右側開始 ✨
-                    <button onclick="startRecordPage()" class="absolute -right-2 -bottom-2 w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-500 text-white rounded-2xl shadow-xl flex items-center justify-center text-2xl active:scale-95 transition-transform hover:rotate-12">
-                        <i class="fas fa-microphone-alt"></i>
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- 2. 錄音頁面 -->
-        <div id="page-record" class="page p-6 hidden">
-             <header class="flex justify-between items-center mb-10 text-gray-800 font-black">
-                <div onclick="cancelRecording()" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400 cursor-pointer"><i class="fas fa-chevron-left"></i></div>
-                <h1 class="text-xl font-black">正在錄音</h1>
-                <div class="w-10"></div>
-            </header>
-            <div class="flex-1 flex flex-col items-center justify-center -mt-10 recording-active">
-                <div id="record-timer" class="text-6xl font-black text-gray-800 mb-6 tracking-tighter">00:00</div>
-                <div id="live-transcript" class="text-xs text-brand/60 font-medium mb-10 text-center px-6 h-12 italic leading-relaxed">總裁正在專心聽課...</div>
-                <div class="w-full h-40 bg-brand-light rounded-[3.5rem] flex items-center justify-around px-12 mb-20 border border-brand/10">
-                    <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
-                </div>
-                <button id="stop-btn" onclick="stopRecording()" class="w-24 h-24 bg-red-500 text-white rounded-full flex items-center justify-center text-3xl shadow-2xl active:scale-95 transition-all"><i class="fas fa-stop"></i></button>
-            </div>
-        </div>
-
-        <!-- 3. Loading 頁面 -->
-        <div id="page-loading" class="page hidden bg-[#13B5B1]">
-            <div class="flex-1 flex flex-col items-center justify-center text-white p-8 text-center">
-                <div class="relative w-44 h-44 mb-10">
-                    <div class="absolute inset-0 border-[6px] border-white/20 rounded-full"></div>
-                    <div class="absolute inset-0 border-[6px] border-white rounded-full border-t-transparent animate-spin"></div>
-                    <div class="absolute inset-0 flex items-center justify-center text-6xl font-black font-serif italic"></div>
-                </div>
-                <h2 class="text-2xl font-black tracking-widest mb-3">總裁正在整理筆記...</h2>
-                <p id="loading-msg" class="text-white/60 text-xs font-bold uppercase tracking-widest">精煉課堂重點中</p>
-            </div>
-        </div>
-
-        <!-- 4. 內容展示頁面 -->
-        <div id="page-content" class="page hidden">
-            <div class="px-6 pt-4 pb-2 bg-white">
-                <header class="flex justify-between items-center mb-6">
-                    <div onclick="navigateTo('page-list')" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400 cursor-pointer">
-                        <i class="fas fa-chevron-left"></i>
-                    </div>
-                    
-                    <h1 id="content-title" onclick="editNoteTitle()" class="text-sm font-black text-gray-800 truncate px-4 text-center flex-1 cursor-pointer hover:bg-gray-100 rounded-lg">課堂摘要</h1>
-                    
-                    <div class="flex gap-2">
-                        <div id="star-btn" onclick="toggleFavorite()" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-yellow-50 text-yellow-400 cursor-pointer">
-                            <i id="star-icon" class="far fa-star"></i> </div>
-                        <div onclick="handleContentDelete()" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-red-50 text-red-400 cursor-pointer">
-                            <i class="fas fa-trash-alt"></i>
-                        </div>
-                        <div onclick="exportToPDF()" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-[#13B5B1]/10 text-[#13B5B1] cursor-pointer">
-                            <i class="fas fa-file-export"></i>
-                        </div>
-                    </div>
-                </header>
-
-                <div class="flex p-1 bg-gray-100 rounded-full mb-2">
-                    <button id="tab-note" onclick="switchContentView('note')" class="tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-xs font-black shadow-md">AI 即時筆記</button>
-                    <button id="tab-transcript" onclick="switchContentView('transcript')" class="tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-xs font-black">逐字稿</button>
-                </div>
-            </div>
-
-            <div id="view-note" class="flex-1 overflow-y-auto px-6 py-4 no-scrollbar bg-[#FAFAFA]">
-                <div class="flex gap-4 mb-6">
-                    <div class="w-10 h-10 bg-[#13B5B1] rounded-2xl flex-shrink-0 flex items-center justify-center text-white text-[11px] font-black shadow-lg shadow-[#13B5B1]/20">總裁</div>
-                    <div id="ai-intro-text" class="bg-white border border-gray-100 p-4 rounded-2xl rounded-tl-none text-sm text-gray-700 shadow-sm font-medium leading-relaxed">總裁已經為您準備好筆記了！</div>
-                </div>
-                <div id="note-cards-container"></div>
-                <div class="flex flex-col gap-2 mt-4 pb-12">
-                    <button onclick="generateQuiz()" class="w-full py-3 bg-white border border-brand text-brand rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
-                        ✨ 智能複習測驗
-                    </button>
-                    
-                    <div class="flex gap-2">
-                        <button onclick="changeCategory()" class="flex-1 py-3 bg-white border border-orange-400 text-orange-500 rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
-                            🏷️ 切換分類
-                        </button>
-                        <button onclick="expandContent()" class="flex-1 py-3 bg-white border border-brand text-brand rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
-                            📚 擴充建議
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="view-transcript" class="flex-1 overflow-y-auto px-6 py-6 hidden no-scrollbar bg-white">
-                <div id="transcript-container" class="timeline-container"><div class="timeline-line"></div></div>
-            </div>
-            
-            <div class="px-6 py-6 border-t border-gray-50 bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.01)]">
-                <div class="flex items-center gap-4">
-                    <div class="w-10 h-10 flex items-center justify-center bg-[#13B5B1] text-white rounded-2xl shadow-lg shadow-[#13B5B1]/20"><i class="fas fa-play text-sm"></i></div>
-                    <div class="flex-1 h-1.5 bg-gray-100 rounded-full relative overflow-hidden"><div id="playback-bar" class="absolute top-0 left-0 w-full h-full bg-[#13B5B1] rounded-full"></div></div>
-                    <span id="content-duration" class="text-[10px] text-gray-400 font-black tracking-tighter">00:00 / 00:00</span>
-                </div>
-            </div>
-        </div>
-
-        <div id="page-trash" class="page hidden min-h-screen bg-[#F8FAFA] pb-24">
-            <div class="p-6">
-                <div class="flex items-center justify-between mb-6">
-                    <div class="flex items-center gap-4">
-                        <button onclick="navigateTo('page-home')" class="w-10 h-10 bg-white rounded-2xl shadow-sm flex items-center justify-center active:scale-95 transition-all">
-                            <i class="fas fa-chevron-left text-gray-400"></i>
-                        </button>
-                        <h2 class="text-xl font-black text-gray-800">回收站</h2>
-                    </div>
-                    <button onclick="permanentClearAll()" class="text-[10px] font-black text-red-400 bg-red-50 px-3 py-2 rounded-xl active:scale-95 transition-all">
-                        清空全部
-                    </button>
-                </div>
-
-                <div id="trash-container" class="flex flex-col gap-3">
-                    </div>
-                
-                <div id="trash-empty-state" class="hidden flex flex-col items-center justify-center py-20 text-gray-300">
-                    <i class="fas fa-trash-alt text-5xl mb-4 opacity-20"></i>
-                    <p class="text-xs font-bold">回收站空空如也</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- 底部五鍵導覽列 (僅 Icon) -->
-        <div id="main-nav" class="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around py-6 px-6 pb-10 z-40 shadow-[0_-10px_30px_rgba(0,0,0,0.03)]">
-            <div onclick="navigateTo('page-home')" id="nav-home" class="nav-item-active cursor-pointer"><i class="fas fa-home text-2xl"></i></div>
-            <div onclick="navigateTo('page-list')" id="nav-notes" class="nav-item-inactive cursor-pointer"><i class="fas fa-book text-2xl"></i></div>
-            <div class="nav-item-inactive cursor-pointer opacity-20"><i class="fas fa-graduation-cap text-2xl"></i></div>
-            <div onclick="navigateTo('page-trash')" id="nav-trash" class="nav-item-inactive cursor-pointer"><i class="fas fa-trash text-2xl"></i></div>
-            <div class="nav-item-inactive cursor-pointer opacity-20"><i class="fas fa-cog text-2xl"></i></div>
-        </div>
-
-        <!-- 刪除確認 Modal -->
-        <div id="confirm-modal">
-            <div class="bg-white w-[80%] rounded-3xl p-6 shadow-2xl text-center">
-                <div class="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl"><i class="fas fa-trash-alt"></i></div>
-                <h3 class="font-black text-lg mb-2 text-gray-800">確定要刪除嗎？</h3>
-                <div class="flex gap-3">
-                    <button onclick="closeConfirmModal()" class="flex-1 py-3 bg-gray-100 text-gray-500 rounded-2xl font-bold text-xs">取消</button>
-                    <button id="btn-real-delete" class="flex-1 py-3 bg-red-500 text-white rounded-2xl font-bold text-xs">確認刪除</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- AI 彈窗 -->
-        <div id="ai-modal">
-            <div class="bg-white w-full max-h-[70%] rounded-[2.5rem] p-6 shadow-2xl flex flex-col relative">
-                <button onclick="closeModal()" class="absolute top-6 right-6 text-gray-300">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
-                
-                <div id="modal-content" class="overflow-y-auto no-scrollbar pt-4"></div>
-                
-                </div>
-        </div>
+  <div class="phone-container">
+    <!-- 狀態欄 -->
+    <div class="flex justify-between items-center px-8 py-3 text-[11px] font-bold z-50 bg-white">
+      <span id="status-time">09:41</span>
+      <div class="flex gap-1.5 items-center">
+        <i class="fas fa-signal"></i>
+        <i class="fas fa-wifi"></i>
+        <i class="fas fa-battery-full"></i>
+      </div>
     </div>
 
-    <script type="module" src="/main.js"></script>
+    <!-- 0. 首頁 -->
+    <div id="page-home" class="page overflow-y-auto no-scrollbar">
+      <div class="px-6 pt-6 pb-24">
+        <header class="flex justify-between items-center mb-8">
+          <div>
+            <p class="text-[10px] text-gray-300 font-black tracking-widest uppercase mb-1">DASHBOARD</p>
+            <h2 class="text-2xl font-black text-gray-800">總裁 您好 ✨</h2>
+          </div>
+          <div class="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center border border-gray-100 overflow-hidden">
+            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="President" />
+          </div>
+        </header>
+
+        <div class="flex items-end gap-3 mb-10">
+          <div class="relative flex-shrink-0">
+            <div class="w-14 h-18 bg-gray-100 rounded-b-xl overflow-hidden border-2 border-white shadow-md">
+              <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Felix" class="w-full h-full" alt="Assistant" />
+            </div>
+            <div class="absolute -bottom-1 left-0 right-0 bg-white border border-[#13B5B1]/20 text-[8px] text-[#13B5B1] py-0.5 text-center font-black rounded-full">
+              總裁助手
+            </div>
+          </div>
+          <div class="bg-[#F0F9F9] border border-[#13B5B1]/10 rounded-3xl rounded-bl-none p-4 flex-1 shadow-sm">
+            <p class="text-[11px] text-[#13B5B1] font-bold leading-relaxed">
+              今天想學習什麼？我已經為您的課程準備好了錄音與分析功能。
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mb-8">
+          <div data-page="page-list" class="home-grid-card" role="button" tabindex="0">
+            <div class="w-12 h-12 bg-cyan-50 text-[#13B5B1] rounded-2xl flex items-center justify-center mb-1">
+              <i class="fas fa-book-open"></i>
+            </div>
+            <h4>課堂筆記</h4>
+            <p class="uppercase">Notes</p>
+          </div>
+
+          <div class="home-grid-card opacity-50">
+            <div class="w-12 h-12 bg-gray-50 text-gray-400 rounded-2xl flex items-center justify-center mb-1">
+              <i class="fas fa-file-alt"></i>
+            </div>
+            <h4>純逐字稿</h4>
+            <p class="uppercase">Transcripts</p>
+          </div>
+
+          <div class="home-grid-card opacity-50">
+            <div class="w-12 h-12 bg-orange-50 text-orange-400 rounded-2xl flex items-center justify-center mb-1">
+              <i class="fas fa-graduation-cap"></i>
+            </div>
+            <h4>智能複習</h4>
+            <p class="uppercase">Review</p>
+          </div>
+
+          <div data-page="page-trash" class="home-grid-card" role="button" tabindex="0">
+            <div class="w-12 h-12 bg-red-50 text-red-400 rounded-2xl flex items-center justify-center mb-1">
+              <i class="fas fa-trash-alt"></i>
+            </div>
+            <h4>回收站</h4>
+            <p class="uppercase">Trash</p>
+          </div>
+        </div>
+
+        <button data-action="start-record" class="w-full bg-[#13B5B1] text-white py-5 rounded-[2.5rem] font-black text-sm shadow-xl shadow-[#13B5B1]/20 flex items-center justify-center gap-3 active:scale-95 transition-all">
+          <i class="fas fa-microphone-alt text-lg"></i> 開始新錄音
+        </button>
+      </div>
+    </div>
+
+    <!-- 1. 列表頁面 -->
+    <div id="page-list" class="page hidden overflow-y-auto no-scrollbar">
+      <div class="sticky top-0 z-30 bg-white shadow-sm">
+        <header class="flex items-center gap-3 px-6 pt-6 pb-4">
+          <div data-page="page-home" class="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400 cursor-pointer active:scale-90 transition-all" role="button" tabindex="0">
+            <i class="fas fa-chevron-left text-xs"></i>
+          </div>
+          <h1 class="text-lg font-black text-gray-800 whitespace-nowrap">課堂記錄</h1>
+
+          <div class="flex items-center bg-gray-50 rounded-2xl px-3 flex-1 border border-gray-50 focus-within:border-[#13B5B1] focus-within:bg-white transition-all">
+            <i class="fas fa-search text-gray-300 text-xs"></i>
+            <input id="search-input" type="text" placeholder="搜尋..."
+              class="bg-transparent border-none outline-none px-2 py-2 text-xs w-full font-bold text-gray-600" />
+          </div>
+        </header>
+
+        <div class="px-6 py-2 border-b border-gray-50 flex items-center justify-between bg-white/95 backdrop-blur-sm">
+          <div class="flex gap-4">
+            <span data-filter="all" id="filter-all" class="text-xs font-black text-[#13B5B1] cursor-pointer border-b-2 border-[#13B5B1] pb-1 transition-all" role="button" tabindex="0">全部</span>
+            <span data-filter="fav" id="filter-fav" class="text-xs font-black text-gray-300 cursor-pointer pb-1 transition-all" role="button" tabindex="0">★ 我的收藏</span>
+          </div>
+          <div id="category-filter-container"></div>
+        </div>
+      </div>
+
+      <div class="px-6 pt-6 pb-40">
+        <div class="flex p-1 bg-gray-100 rounded-full mb-8">
+          <button data-list-view="note" id="list-tab-note" class="tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-[10px] font-black shadow-md">AI 即時</button>
+          <button data-list-view="transcript" id="list-tab-transcript" class="tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-[10px] font-black">逐字稿</button>
+        </div>
+
+        <div id="list-container" class="space-y-6"></div>
+      </div>
+
+      <div class="absolute bottom-24 left-6 right-6 flex items-end z-20">
+        <div class="relative flex-shrink-0">
+          <div class="w-16 h-20 bg-gray-100 rounded-b-xl overflow-hidden border-2 border-white shadow-lg">
+            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Felix" class="w-full h-full" alt="AI" />
+          </div>
+          <div class="absolute -bottom-1 left-0 right-0 bg-white border border-[#13B5B1]/20 text-[8px] text-[#13B5B1] py-0.5 text-center font-black rounded-full shadow-sm">總裁助理</div>
+        </div>
+        <div class="ml-3 mb-2 bg-[#F0F9F9] p-4 rounded-3xl rounded-bl-none flex-1 text-[11px] text-[#13B5B1] font-bold border border-[#13B5B1]/10 shadow-sm relative pr-12">
+          想錄製新課堂嗎？點擊右側開始 ✨
+          <button data-action="start-record" class="absolute -right-2 -bottom-2 w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-500 text-white rounded-2xl shadow-xl flex items-center justify-center text-2xl active:scale-95 transition-transform hover:rotate-12">
+            <i class="fas fa-microphone-alt"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 錄音頁面 -->
+    <div id="page-record" class="page p-6 hidden">
+      <header class="flex justify-between items-center mb-10 text-gray-800 font-black">
+        <div data-action="cancel-record" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400 cursor-pointer" role="button" tabindex="0">
+          <i class="fas fa-chevron-left"></i>
+        </div>
+        <h1 class="text-xl font-black">正在錄音</h1>
+        <div class="w-10"></div>
+      </header>
+
+      <div class="flex-1 flex flex-col items-center justify-center -mt-10 recording-active">
+        <div id="record-timer" class="text-6xl font-black text-gray-800 mb-6 tracking-tighter">00:00</div>
+        <div id="live-transcript" class="text-xs text-brand/60 font-medium mb-10 text-center px-6 h-12 italic leading-relaxed">總裁正在專心聽課...</div>
+        <div class="w-full h-40 bg-brand-light rounded-[3.5rem] flex items-center justify-around px-12 mb-20 border border-brand/10">
+          <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+        </div>
+        <button data-action="stop-record" id="stop-btn" class="w-24 h-24 bg-red-500 text-white rounded-full flex items-center justify-center text-3xl shadow-2xl active:scale-95 transition-all">
+          <i class="fas fa-stop"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 3. Loading -->
+    <div id="page-loading" class="page hidden bg-[#13B5B1]">
+      <div class="flex-1 flex flex-col items-center justify-center text-white p-8 text-center">
+        <div class="relative w-44 h-44 mb-10">
+          <div class="absolute inset-0 border-[6px] border-white/20 rounded-full"></div>
+          <div class="absolute inset-0 border-[6px] border-white rounded-full border-t-transparent animate-spin"></div>
+          <div class="absolute inset-0 flex items-center justify-center text-6xl font-black font-serif italic"></div>
+        </div>
+        <h2 class="text-2xl font-black tracking-widest mb-3">總裁正在整理筆記...</h2>
+        <p id="loading-msg" class="text-white/60 text-xs font-bold uppercase tracking-widest">精煉課堂重點中</p>
+      </div>
+    </div>
+
+    <!-- 4. 內容展示 -->
+    <div id="page-content" class="page hidden">
+      <div class="px-6 pt-4 pb-2 bg-white">
+        <header class="flex justify-between items-center mb-6">
+          <div data-page="page-list" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400 cursor-pointer" role="button" tabindex="0">
+            <i class="fas fa-chevron-left"></i>
+          </div>
+
+          <h1 id="content-title" data-action="edit-title" class="text-sm font-black text-gray-800 truncate px-4 text-center flex-1 cursor-pointer hover:bg-gray-100 rounded-lg" role="button" tabindex="0">
+            課堂摘要
+          </h1>
+
+          <div class="flex gap-2">
+            <div id="star-btn" data-action="toggle-favorite" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-yellow-50 text-yellow-400 cursor-pointer" role="button" tabindex="0">
+              <i id="star-icon" class="far fa-star"></i>
+            </div>
+            <div data-action="delete-current" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-red-50 text-red-400 cursor-pointer" role="button" tabindex="0">
+              <i class="fas fa-trash-alt"></i>
+            </div>
+            <div data-action="export-pdf" class="w-10 h-10 flex items-center justify-center rounded-2xl bg-[#13B5B1]/10 text-[#13B5B1] cursor-pointer" role="button" tabindex="0">
+              <i class="fas fa-file-export"></i>
+            </div>
+          </div>
+        </header>
+
+        <div class="flex p-1 bg-gray-100 rounded-full mb-2">
+          <button data-content-view="note" id="tab-note" class="tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-xs font-black shadow-md">AI 即時筆記</button>
+          <button data-content-view="transcript" id="tab-transcript" class="tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-xs font-black">逐字稿</button>
+        </div>
+      </div>
+
+      <div id="view-note" class="flex-1 overflow-y-auto px-6 py-4 no-scrollbar bg-[#FAFAFA]">
+        <div class="flex gap-4 mb-6">
+          <div class="w-10 h-10 bg-[#13B5B1] rounded-2xl flex-shrink-0 flex items-center justify-center text-white text-[11px] font-black shadow-lg shadow-[#13B5B1]/20">總裁</div>
+          <div id="ai-intro-text" class="bg-white border border-gray-100 p-4 rounded-2xl rounded-tl-none text-sm text-gray-700 shadow-sm font-medium leading-relaxed">
+            總裁已經為您準備好筆記了！
+          </div>
+        </div>
+
+        <div id="note-cards-container"></div>
+
+        <div class="flex flex-col gap-2 mt-4 pb-12">
+          <button data-action="quiz" class="w-full py-3 bg-white border border-brand text-brand rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+            ✨ 智能複習測驗
+          </button>
+
+          <div class="flex gap-2">
+            <button data-action="change-category" class="flex-1 py-3 bg-white border border-orange-400 text-orange-500 rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+              🏷️ 切換分類
+            </button>
+            <button data-action="expand" class="flex-1 py-3 bg-white border border-brand text-brand rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+              📚 擴充建議
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-transcript" class="flex-1 overflow-y-auto px-6 py-6 hidden no-scrollbar bg-white">
+        <div id="transcript-container" class="timeline-container"><div class="timeline-line"></div></div>
+      </div>
+
+      <div class="px-6 py-6 border-t border-gray-50 bg-white shadow-[0_-5px_15px_rgba(0,0,0,0.01)]">
+        <div class="flex items-center gap-4">
+          <div class="w-10 h-10 flex items-center justify-center bg-[#13B5B1] text-white rounded-2xl shadow-lg shadow-[#13B5B1]/20"><i class="fas fa-play text-sm"></i></div>
+          <div class="flex-1 h-1.5 bg-gray-100 rounded-full relative overflow-hidden"><div id="playback-bar" class="absolute top-0 left-0 w-full h-full bg-[#13B5B1] rounded-full"></div></div>
+          <span id="content-duration" class="text-[10px] text-gray-400 font-black tracking-tighter">00:00 / 00:00</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. 回收站 -->
+    <div id="page-trash" class="page hidden min-h-screen bg-[#F8FAFA] pb-24">
+      <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+          <div class="flex items-center gap-4">
+            <button data-page="page-home" class="w-10 h-10 bg-white rounded-2xl shadow-sm flex items-center justify-center active:scale-95 transition-all">
+              <i class="fas fa-chevron-left text-gray-400"></i>
+            </button>
+            <h2 class="text-xl font-black text-gray-800">回收站</h2>
+          </div>
+          <button data-action="trash-clear-all" class="text-[10px] font-black text-red-400 bg-red-50 px-3 py-2 rounded-xl active:scale-95 transition-all">
+            清空全部
+          </button>
+        </div>
+
+        <div id="trash-container" class="flex flex-col gap-3"></div>
+
+        <div id="trash-empty-state" class="hidden flex flex-col items-center justify-center py-20 text-gray-300">
+          <i class="fas fa-trash-alt text-5xl mb-4 opacity-20"></i>
+          <p class="text-xs font-bold">回收站空空如也</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部導覽 -->
+    <div id="main-nav" class="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around py-6 px-6 pb-10 z-40 shadow-[0_-10px_30px_rgba(0,0,0,0.03)]">
+      <div data-page="page-home" id="nav-home" class="nav-item-active cursor-pointer" role="button" tabindex="0"><i class="fas fa-home text-2xl"></i></div>
+      <div data-page="page-list" id="nav-notes" class="nav-item-inactive cursor-pointer" role="button" tabindex="0"><i class="fas fa-book text-2xl"></i></div>
+      <div class="nav-item-inactive cursor-pointer opacity-20"><i class="fas fa-graduation-cap text-2xl"></i></div>
+      <div data-page="page-trash" id="nav-trash" class="nav-item-inactive cursor-pointer" role="button" tabindex="0"><i class="fas fa-trash text-2xl"></i></div>
+      <div class="nav-item-inactive cursor-pointer opacity-20"><i class="fas fa-cog text-2xl"></i></div>
+    </div>
+
+    <!-- 刪除確認 Modal -->
+    <div id="confirm-modal">
+      <div class="bg-white w-[80%] rounded-3xl p-6 shadow-2xl text-center">
+        <div class="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+          <i class="fas fa-trash-alt"></i>
+        </div>
+        <h3 class="font-black text-lg mb-2 text-gray-800">確定要刪除嗎？</h3>
+        <div class="flex gap-3">
+          <button data-action="confirm-cancel" class="flex-1 py-3 bg-gray-100 text-gray-500 rounded-2xl font-bold text-xs">取消</button>
+          <button id="btn-real-delete" class="flex-1 py-3 bg-red-500 text-white rounded-2xl font-bold text-xs">確認刪除</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI 彈窗 -->
+    <div id="ai-modal">
+      <div class="bg-white w-full max-h-[70%] rounded-[2.5rem] p-6 shadow-2xl flex flex-col relative">
+        <button data-action="modal-close" class="absolute top-6 right-6 text-gray-300">
+          <i class="fas fa-times text-xl"></i>
+        </button>
+
+        <div id="modal-content" class="overflow-y-auto no-scrollbar pt-4"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/main.js"></script>
 </body>
 </html>
