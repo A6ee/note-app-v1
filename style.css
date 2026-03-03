@@ -195,3 +195,18 @@ body {
 
 .quiz-correct{ background:#dcfce7; border-color:#22c55e; color:#15803d; }
 .quiz-wrong{ background:#fee2e2; border-color:#ef4444; color:#b91c1c; }
+
+/* 加入 RWD 策略中 */
+.aspect-ratio-1 { aspect-ratio: 1 / 1; }
+
+#settings-avatar-grid div:active {
+    transform: scale(0.9);
+}
+
+/* 讓主頁頭像轉動小動畫，增加質感 */
+.app-header .right-slot div img {
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.app-header .right-slot div:hover img {
+    transform: rotate(10deg) scale(1.1);
+}

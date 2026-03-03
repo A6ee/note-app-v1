@@ -65,18 +65,44 @@ let currentNoteData = notesLibrary[0];
 
 
 // 載入個人設定
+
+
 let appSettings = JSON.parse(localStorage.getItem("president_settings")) || {
     nickname: "總裁",
+    avatarSeed: "Panda", // ✨ 預設頭像
     noteStyle: "standard"
 };
 
-let notesLibrary2 = JSON.parse(localStorage.getItem("president_notes")) || [];
-
+// ✨ 定義可選的動物清單
+const animalAvatars = [
+    "Fox", "Cat", "Dog", "Bear" , 
+    "Penguin", "Owl", "Rabbit", "Frog", "Bee", "Butterfly", 
+    "Elephant",  "Zebra", 
+];let tempSelectedAvatar = appSettings.avatarSeed;
 /**
  * =========================================================
  * 1) Utils（小工具）
  * =========================================================
  */
+
+// 渲染設定頁面的頭像選單
+function renderAvatarChoices() {
+    const grid = safeEl("settings-avatar-grid");
+    if (!grid) return;
+    
+    grid.innerHTML = animalAvatars.map(animal => {
+        const isSelected = tempSelectedAvatar === animal;
+        // ✨ 切換為更可愛的 Fun Emoji 風格
+        const avatarUrl = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${animal}`;
+        
+        return `
+            <div data-action="select-avatar" data-seed="${animal}" 
+                 class="aspect-square cursor-pointer rounded-2xl border-2 p-2 transition-all hover:scale-105 active:scale-95 ${isSelected ? 'border-[#13B5B1] bg-[#F0F9F9]' : 'border-transparent bg-gray-50'}">
+                <img src="${avatarUrl}" class="w-full h-full object-contain" alt="${animal}">
+            </div>
+        `;
+    }).join('');
+}
 
 /**
  * 將 HTML 日期 (YYYY-MM-DD) 轉換為筆記格式 (M / D)
@@ -118,21 +144,30 @@ function syncFavoriteUI(note) {
 function loadSettingsToUI() {
     const nickInput = safeEl("settings-nickname");
     if (nickInput) nickInput.value = appSettings.nickname;
+    tempSelectedAvatar = appSettings.avatarSeed; // 同步目前設定
+    renderAvatarChoices();
 }
 
 function saveSettingsFromUI() {
     appSettings.nickname = safeEl("settings-nickname")?.value || "總裁";
-    localStorage.setItem("president_settings", JSON.stringify(appSettings));
+    appSettings.avatarSeed = tempSelectedAvatar; // ✨ 儲存選中的動物
     
-    // 同步更新首頁招呼語
+    localStorage.setItem("president_settings", JSON.stringify(appSettings));
     updateHomeGreeting();
-    alert("您的檔案已更新 ✨");
+    alert("總裁，您的個人檔案已同步更新 ✨");
     window.navigateTo("page-home");
 }
 
 function updateHomeGreeting() {
     const el = safeEl("home-user-greeting");
+    // ✨ 確保抓取到首頁 Header 的頭像圖片
+    const avatarImg = document.querySelector("#page-home .app-header .right-slot img");
+    
     if (el) el.innerText = `${appSettings.nickname} 您好 ✨`;
+    if (avatarImg) {
+        // ✨ 同步更換為 Fun Emoji
+        avatarImg.src = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${appSettings.avatarSeed}`;
+    }
 }
 /**
  * =========================================================
@@ -286,7 +321,7 @@ async function stopRecording() {
     const newNote = {
       ...result,
       id: Date.now().toString(),
-      title: "新筆記",
+      title: result?.title?.trim() ? result.title.trim() : "新筆記",
       category: "未分類",
       date: new Date().getMonth() + 1 + " / " + new Date().getDate(),
       duration: durationText,
@@ -1074,6 +1109,14 @@ Object.assign(window, {
     const el = e.target.closest("[data-action], [data-page], [data-filter], [data-list-view], [data-content-view]");
     if (!el) return;
 
+    const action = el.dataset.action;
+
+    if (action === "select-avatar") {
+        tempSelectedAvatar = el.dataset.seed;
+        renderAvatarChoices();
+        return;
+    }
+
     // page
     if (el.dataset.page) {
       window.navigateTo(el.dataset.page);
@@ -1112,8 +1155,6 @@ Object.assign(window, {
       return;
     }
 
-    // actions
-    const action = el.dataset.action;
 
     switch (action) {
         case "save-settings": saveSettingsFromUI(); break;
