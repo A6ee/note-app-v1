@@ -7,6 +7,7 @@
 // filters
 let currentFilterCategory = "全部";
 let currentFilter = "all"; // 'all' | 'fav'
+let currentFilterDate = null; // 預設為 null，代表不篩選日期
 
 // env
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -62,12 +63,30 @@ let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
 
 let currentNoteData = notesLibrary[0];
 
+
+// 載入個人設定
+let appSettings = JSON.parse(localStorage.getItem("president_settings")) || {
+    nickname: "總裁",
+    noteStyle: "standard"
+};
+
+let notesLibrary2 = JSON.parse(localStorage.getItem("president_notes")) || [];
+
 /**
  * =========================================================
  * 1) Utils（小工具）
  * =========================================================
  */
 
+/**
+ * 將 HTML 日期 (YYYY-MM-DD) 轉換為筆記格式 (M / D)
+ */
+function formatHTMLDateToNoteDate(htmlDate) {
+    if (!htmlDate) return null;
+    const [year, month, day] = htmlDate.split('-');
+    // 去掉前導零，例如 "03" 變成 "3"
+    return `${parseInt(month)} / ${parseInt(day)}`;
+}
 function debounce(fn, delay = 150) {
   let t = null;
   return (...args) => {
@@ -96,6 +115,25 @@ function syncFavoriteUI(note) {
   }
 }
 
+function loadSettingsToUI() {
+    const nickInput = safeEl("settings-nickname");
+    if (nickInput) nickInput.value = appSettings.nickname;
+}
+
+function saveSettingsFromUI() {
+    appSettings.nickname = safeEl("settings-nickname")?.value || "總裁";
+    localStorage.setItem("president_settings", JSON.stringify(appSettings));
+    
+    // 同步更新首頁招呼語
+    updateHomeGreeting();
+    alert("您的檔案已更新 ✨");
+    window.navigateTo("page-home");
+}
+
+function updateHomeGreeting() {
+    const el = safeEl("home-user-greeting");
+    if (el) el.innerText = `${appSettings.nickname} 您好 ✨`;
+}
 /**
  * =========================================================
  * 2) Storage（資料存取）
@@ -126,7 +164,10 @@ function markNoteDeleted(noteId) {
  */
 
 function initRecognition() {
-  if (!("webkitSpeechRecognition" in window)) return;
+  if (!("webkitSpeechRecognition" in window)) {
+    console.warn("This browser does not support webkitSpeechRecognition.");
+    return;
+  }
 
   recognition = new window.webkitSpeechRecognition();
   recognition.continuous = true;
@@ -389,18 +430,35 @@ function renderNotesList() {
   if (!container) return;
   container.innerHTML = "";
 
-  const filteredNotes = notesLibrary.filter((note) => {
-    const matchesSearch = (note.title || "").toLowerCase().includes(searchTerm);
-    const noteCat = note.category || "未分類";
-    const matchesCategory = currentFilterCategory === "全部" || noteCat === currentFilterCategory;
-    const matchesFavorite = currentFilter === "fav" ? !!note.isFavorite : true;
-    return matchesSearch && matchesCategory && matchesFavorite && !note.isDeleted;
-  });
+    const filteredNotes = notesLibrary.filter((note) => {
+            const matchesSearch = (note.title || "").toLowerCase().includes(searchTerm);
+            const noteCat = note.category || "未分類";
+            const matchesCategory = currentFilterCategory === "全部" || noteCat === currentFilterCategory;
+            const matchesFavorite = currentFilter === "fav" ? !!note.isFavorite : true;
 
-  if (filteredNotes.length === 0) {
-    container.innerHTML = `<div class="text-center py-10 text-gray-300 text-xs font-bold">目前沒有筆記項目 😮‍💨</div>`;
-    return;
-  }
+        // ✨ 修正：移除兩側空格再比對，增加穩定度
+            const noteDateNorm = (note.date || "").replace(/\s/g, "");
+            const filterDateNorm = (currentFilterDate || "").replace(/\s/g, "");
+            const matchesDate = !currentFilterDate || noteDateNorm === filterDateNorm;
+
+            return matchesSearch && matchesCategory && matchesFavorite && matchesDate && !note.isDeleted;
+        });
+
+        // ✨ 新增：同步清除按鈕的顯示狀態
+        const clearBtn = safeEl("clear-date-btn");
+        if (clearBtn) clearBtn.classList.toggle("hidden", !currentFilterDate);
+
+        if (filteredNotes.length === 0) {
+            const msg = currentFilterDate ? `${currentFilterDate} 沒有紀錄` : "目前沒有筆記";
+            container.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-20 text-gray-300 opacity-60">
+                <i class="fas fa-file-invoice-alt text-4xl mb-4"></i>
+                <p class="text-sm font-black">${msg}</p>
+                <p class="text-[10px] mt-2 italic">總裁，點擊右下角麥克風開始錄音 ✨</p>
+            </div>
+            `;
+            return;
+        }
 
   filteredNotes.forEach((note) => {
     const wrapper = document.createElement("div");
@@ -832,11 +890,124 @@ async function exportToPDF() {
   }
 }
 
+
+/**
+ * =========================================================
+ * 智能複習中心專用邏輯
+ * =========================================================
+ */
+let selectedReviewNotes = new Set(); // 記錄使用者勾選的筆記 ID
+
+// 1. 渲染複習中心的學科與筆記清單
+function renderReviewSelection() {
+    const catContainer = safeEl("review-cat-tags");
+    const noteContainer = safeEl("review-note-list");
+    if (!catContainer || !noteContainer) return;
+
+    // 取得不重複分類
+    const categories = [...new Set(notesLibrary.filter(n => !n.isDeleted).map(n => n.category || "未分類"))];
+    
+    catContainer.innerHTML = categories.map(cat => `
+        <button data-action="review-filter-cat" data-cat="${cat}" class="px-4 py-2 rounded-xl bg-white border border-gray-100 text-[11px] font-bold text-gray-500 active:bg-[#13B5B1] active:text-white transition-all">
+            ${cat}
+        </button>
+    `).join('');
+
+    // 渲染所有可用筆記
+    const availableNotes = notesLibrary.filter(n => !n.isDeleted);
+    noteContainer.innerHTML = availableNotes.map(note => `
+        <div class="flex items-center gap-4 bg-white p-4 rounded-2xl border border-gray-50 shadow-sm cursor-pointer" data-action="review-toggle-note" data-id="${note.id}">
+            <div class="w-6 h-6 rounded-lg border-2 border-gray-100 flex items-center justify-center transition-all ${selectedReviewNotes.has(note.id) ? 'bg-[#13B5B1] border-[#13B5B1]' : ''}">
+                ${selectedReviewNotes.has(note.id) ? '<i class="fas fa-check text-white text-[10px]"></i>' : ''}
+            </div>
+            <div class="flex-1">
+                <h4 class="text-xs font-black text-gray-800">${note.title}</h4>
+                <p class="text-[9px] text-gray-400 font-bold">${note.category || '未分類'} · ${note.date}</p>
+            </div>
+        </div>
+    `).join('');
+
+    // 更新開始按鈕狀態
+    const startBtn = safeEl("btn-start-review");
+    if (startBtn) {
+        startBtn.disabled = selectedReviewNotes.size === 0;
+        startBtn.style.opacity = selectedReviewNotes.size === 0 ? "0.5" : "1";
+    }
+}
+
+// 2. 核心 AI 跨領域出題邏輯
+async function startSmartReviewQuiz() {
+    if (selectedReviewNotes.size === 0) return;
+
+    const notesToReview = notesLibrary.filter(n => selectedReviewNotes.has(n.id));
+    // 整合多篇筆記的重點內容
+    const combinedContent = notesToReview.map(n => {
+        const sectionsText = (n.sections || []).map(s => `[${s.category}] ${s.items.join(' ')}`).join('\n');
+        return `筆記標題: ${n.title}\n分類: ${n.category}\n內容: ${sectionsText}`;
+    }).join('\n\n---\n\n');
+
+    showModal("✨ 總裁正在進行出題...");
+
+    const prompt = `你是一位嚴謹的教授「認知破壞終結者」。請針對以下提供的多篇筆記內容，出一份具備「深度聯繫」的 5 題單選題測驗。
+題目必須包含：
+1. 針對單一筆記內容的重點考核。
+2. 跨筆記（跨領域）的比較或關聯性問題（例如：A與B概念有何共同點？）。
+
+請嚴格遵守 JSON 格式回傳：
+{"questions": [{"question": "題目", "options": ["選項1","選項2","選項3","選項4"], "answer": 0}]}
+內容如下：\n${combinedContent}`;
+
+    const schema = {
+        type: "OBJECT",
+        properties: {
+            questions: {
+                type: "ARRAY",
+                items: {
+                    type: "OBJECT",
+                    properties: {
+                        question: { type: "STRING" },
+                        options: { type: "ARRAY", items: { type: "STRING" }, minItems: 4 },
+                        answer: { type: "NUMBER" },
+                    },
+                    required: ["question", "options", "answer"],
+                },
+            },
+        },
+        required: ["questions"],
+    };
+
+    try {
+        const data = await callGemini(prompt, schema);
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        const cleanJson = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+        const result = JSON.parse(cleanJson);
+
+        // 渲染題目 (複用現有的 modal 顯示邏輯)
+        let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 認知破壞挑戰：跨領域戰役</h3>`;
+        result.questions.forEach((q, qIdx) => {
+            html += `
+                <div class="mb-8 border-b border-gray-50 pb-6">
+                    <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${q.question}</p>
+                    <div class="space-y-2">
+                        ${q.options.map((opt, oIdx) => `
+                            <button type="button" class="quiz-option" data-action="quiz-answer" data-selected="${oIdx}" data-correct="${q.answer}">${opt}</button>
+                        `).join("")}
+                    </div>
+                </div>`;
+        });
+        safeEl("modal-content").innerHTML = html;
+    } catch (err) {
+        console.error("出題失敗：", err);
+        safeEl("modal-content").innerHTML = `<div class="text-center py-10"><p class="text-xs font-bold text-gray-400">連線失敗，請確認網路或 API Key。</p></div>`;
+    }
+}
+
 /**
  * =========================================================
  * 7) Global bindings（給少量 window 存取）
  * =========================================================
  */
+
 
 Object.assign(window, {
   navigateTo: (pageId) => {
@@ -848,15 +1019,33 @@ Object.assign(window, {
     else nav.classList.remove("hidden");
 
     if (pageId === "page-list") {
-      renderCategoryFilters();
-      renderNotesList();
+        renderCategoryFilters();
+        renderNotesList(); // 這會根據 currentFilterDate 重新渲染
     }
     if (pageId === "page-trash") {
       renderTrashList();
     }
+    if (pageId === "page-review") {
+        selectedReviewNotes.clear(); // 每次進入清空，讓總裁重新挑選
+        renderReviewSelection();
+    }
+    if (pageId === "page-settings") loadSettingsToUI();
+    
 
     updateNavUI(pageId);
   },
+
+    filterByDate: (val) => {
+        currentFilterDate = formatHTMLDateToNoteDate(val); // ✅ 用同一個函式
+        renderNotesList();
+    },
+
+    clearDateFilter: () => {
+        currentFilterDate = null;
+        const input = document.getElementById("date-filter");
+        if (input) input.value = "";
+        renderNotesList();
+    },
 
   loadNoteDetails: (id) => {
     const note = notesLibrary.find((n) => n.id === id);
@@ -927,6 +1116,51 @@ Object.assign(window, {
     const action = el.dataset.action;
 
     switch (action) {
+        case "save-settings": saveSettingsFromUI(); break;
+        case "clear-all-data": if(confirm("清除？")) { localStorage.clear(); location.reload(); } break;
+        case "open-date-picker": {
+            // 點擊圖示，主動觸發原生日期選擇器
+            const dateInput = safeEl("date-filter");
+            if (dateInput && typeof dateInput.showPicker === "function") {
+                dateInput.showPicker();
+            } else if (dateInput) {
+                dateInput.click();
+            }
+            break;
+        }
+
+        case "clear-date": {
+            // 呼叫您在 Object.assign(window) 裡定義好的清除函數
+            window.clearDateFilter();
+            break;
+        }
+        case "review-toggle-note": {
+            const id = el.dataset.id;
+            if (selectedReviewNotes.has(id)) selectedReviewNotes.delete(id);
+            else selectedReviewNotes.add(id);
+            renderReviewSelection();
+            break;
+        }
+        case "review-filter-cat": {
+            const cat = el.dataset.cat;
+            // 一鍵勾選該分類下的所有筆記
+            notesLibrary.forEach(n => {
+                if (!n.isDeleted && (n.category === cat || (!n.category && cat === "未分類"))) {
+                    selectedReviewNotes.add(n.id);
+                }
+            });
+            renderReviewSelection();
+            break;
+        }
+        case "review-select-all": {
+            notesLibrary.forEach(n => { if (!n.isDeleted) selectedReviewNotes.add(n.id); });
+            renderReviewSelection();
+            break;
+        }
+        case "run-smart-quiz": {
+            call(startSmartReviewQuiz);
+            break;
+        }
       case "start-record":
         call(startRecordPage);
         break;
@@ -1063,28 +1297,71 @@ Object.assign(window, {
  * =========================================================
  */
 
-window.onload = () => {
+function syncLayoutHeights() {
+  const nav = document.getElementById("main-nav");
+  const homeCta = document.querySelector(".home-cta"); // 改用 class 抓
+  const reviewCta = document.querySelector(".review-cta");
+  const assistant = document.querySelector(".list-assistant-fixed");
+
+  const root = document.documentElement;
+  if (nav) root.style.setProperty("--nav-h", `${nav.offsetHeight}px`);
+  if (homeCta) root.style.setProperty("--home-cta-h", `${homeCta.offsetHeight}px`);
+  if (reviewCta) root.style.setProperty("--review-cta-h", `${reviewCta.offsetHeight}px`);
+  if (assistant) root.style.setProperty("--assistant-h", `${assistant.offsetHeight}px`);
+}
+
+// ✅ 取代你原本的事件監聽
+window.addEventListener("load", () => {
   initRecognition();
+  syncLayoutHeights();
 
-  const timeEl = safeEl("status-time");
-  if (timeEl) {
-    timeEl.innerText = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-  }
+  // 第一次載入時，等 Tailwind/字型/圖片 layout 穩定後再補一次（避免初始量到 0）
+  requestAnimationFrame(syncLayoutHeights);
+  setTimeout(syncLayoutHeights, 200);
+});
 
-  safeEl("search-input")?.addEventListener("input", debounce(renderNotesList, 150));
+window.addEventListener("resize", syncLayoutHeights);
+window.addEventListener("orientationchange", syncLayoutHeights);
 
-  const savedData = localStorage.getItem("temp_transcript");
-  if (savedData && savedData.length > 0) {
-    if (confirm("偵測到上次有未完成的錄音，總裁要為您恢復並整理成筆記嗎？")) {
-      fullTranscript = savedData;
-      lastInterim = "";
-      window.navigateTo("page-loading");
-      stopRecording();
-      return;
-    } else {
-      localStorage.removeItem("temp_transcript");
-    }
-  }
+// ✅ 建議再加：內容動態變高（像 assistant 或 CTA 文案變動）也能即時刷新
+(function observeLayoutHeights(){
+  const ro = new ResizeObserver(() => syncLayoutHeights());
+  const ids = ["main-nav"];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) ro.observe(el);
+  });
 
-  window.navigateTo("page-home");
-};
+  const els = [
+    document.querySelector("#page-home .home-cta"),
+    document.querySelector("#page-review .review-cta"),
+    document.querySelector(".list-assistant-fixed"),
+  ].filter(Boolean);
+
+  els.forEach(el => ro.observe(el));
+})();
+
+// iOS Safari: 地址列收合、鍵盤彈出會改 viewport，這個超有感
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", syncLayoutHeights);
+}
+
+// ✅ 元件高度變了也自動更新（文案變長、按鈕樣式變大、tab 切換造成高度變動）
+const ro = new ResizeObserver(() => syncLayoutHeights());
+["main-nav", "page-home", "page-list", "page-review"].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) ro.observe(el);
+});
+
+// 你切頁 navigateTo 時，有時候 hidden/display 會讓量測變化，保險：
+// 在每次切頁後也補量一次（不改你原本架構，只是包一層）
+const _oldNavigateTo = window.navigateTo;
+if (typeof _oldNavigateTo === "function") {
+  window.navigateTo = (pageId) => {
+    _oldNavigateTo(pageId);
+    // 等 DOM 更新完成後量
+    requestAnimationFrame(syncLayoutHeights);
+    setTimeout(syncLayoutHeights, 50);
+  };
+}
+
