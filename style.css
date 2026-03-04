@@ -2,11 +2,11 @@
    0) Variables & Base
    ========================================================= */
 :root {
-  --brand-color: #13B5B1;
-  --brand-light: #F0F9F9;
-  --brand-accent: #FFA800;
-  --bg-page: #FDFDFD;
-  --text-dark: #1A1A1A;
+  --brand-color: #13b5b1;
+  --brand-light: #f0f9f9;
+  --brand-accent: #ffa800;
+  --bg-page: #fdfdfd;
+  --text-dark: #1a1a1a;
   --text-gray: #999999;
 
   --nav-h: 96px;
@@ -18,71 +18,129 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-* { box-sizing: border-box; }
-body { 
-  margin: 0; 
-  background: #F3F4F6; 
-  overflow-x: hidden; 
-  font-family: "Noto Sans TC", sans-serif !important; 
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: #f3f4f6;
+  overflow-x: hidden;
+  font-family: "Noto Sans TC", sans-serif !important;
 }
 
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-.hidden { display: none !important; }
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hidden {
+  display: none !important;
+}
 
 /* =========================================================
    1) App Shell & Navigation
    ========================================================= */
 .phone-container {
-  width: 100vw; height: 100dvh; background: white; position: relative; overflow: hidden; display: flex; flex-direction: column;
+  width: 100vw;
+  height: 100dvh;
+  background: white;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .page {
-  position: absolute; inset: 0; width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--bg-page); transition: opacity .3s ease;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-page);
+  transition: opacity 0.3s ease;
 }
 
 #main-nav {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; background: white; border-top: 1px solid rgba(0,0,0,0.04);
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: white;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
   padding-bottom: calc(var(--safe-bottom) + 12px) !important;
 }
 
-.nav-item-active { color: var(--brand-color); }
-.nav-item-inactive { color: #D1D5DB; }
+.nav-item-active {
+  color: var(--brand-color);
+}
+.nav-item-inactive {
+  color: #d1d5db;
+}
 
 /* =========================================================
    2) Standardized Header (三段式標頭)
    ========================================================= */
 .app-header {
-  position: sticky; top: 0; z-index: 50; background: white; border-bottom: 1px solid rgba(0,0,0,0.04);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: white;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
   height: calc(var(--safe-top) + var(--app-header-h));
   padding-top: var(--safe-top);
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 var(--content-pad);
 }
 
 .header-content-wrapper {
-  width: 100%; max-width: var(--content-max); display: flex; align-items: center; justify-content: space-between;
+  width: 100%;
+  max-width: var(--content-max);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.left-slot, .right-slot { width: 84px; min-width: 84px; display: flex; align-items: center; }
-.right-slot { justify-content: flex-end; }
-.center-slot { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; }
-
+.left-slot,
+.right-slot {
+  width: 84px;
+  min-width: 84px;
+  display: flex;
+  align-items: center;
+}
+.right-slot {
+  justify-content: flex-end;
+}
+.center-slot {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
 
 /* =========================================================
    4) 固定組件佈局 (修正手機版縮水問題)
    ========================================================= */
 
 /* 基礎設定：手機版預設橫跨全螢幕 */
-.home-cta, .review-cta, .settings-cta, .list-assistant-fixed {
+.home-cta,
+.review-cta,
+.settings-cta,
+.list-assistant-fixed {
   position: fixed;
-  left: 0;    /* ✨ 手機版關鍵：靠左貼齊 */
-  right: 0;   /* ✨ 手機版關鍵：靠右貼齊 */
+  left: 0; /* ✨ 手機版關鍵：靠左貼齊 */
+  right: 0; /* ✨ 手機版關鍵：靠右貼齊 */
   z-index: 35;
   bottom: calc(var(--nav-h) + var(--safe-bottom));
   background: white;
   padding: 16px 24px;
-  border-top: 1px solid rgba(0,0,0,0.03);
+  border-top: 1px solid rgba(0, 0, 0, 0.03);
 }
 
 /* 助理氣泡特別處理：不顯示白色背景底色 */
@@ -91,19 +149,29 @@ body {
   border-top: none;
   pointer-events: none; /* 確保不阻擋下方點擊 */
 }
-.list-assistant-fixed > * { pointer-events: auto; }
+.list-assistant-fixed > * {
+  pointer-events: auto;
+}
 
 /* =========================================================
    3) ✨ RWD 核心策略 (桌機版置中)
    ========================================================= */
 @media (min-width: 900px) {
-
-      /* 首頁卡片自動轉為 4 欄 */
-  #page-home .grid.grid-cols-2 { grid-template-columns: repeat(4, 1fr) !important; }
-  .home-grid-card { aspect-ratio: 4 / 3; }
+  /* 首頁卡片自動轉為 4 欄 */
+  #page-home .grid.grid-cols-2 {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+  .home-grid-card {
+    aspect-ratio: 4 / 3;
+  }
 
   /* 所有滾動內容容器置中 */
-  .home-content, .list-scroll > div, .review-scroll > div, .settings-scroll > div, #trash-container, .rwd-content-wrapper {
+  .home-content,
+  .list-scroll > div,
+  .review-scroll > div,
+  .settings-scroll > div,
+  #trash-container,
+  .rwd-content-wrapper {
     max-width: var(--content-max) !important;
     margin-left: auto !important;
     margin-right: auto !important;
@@ -111,7 +179,11 @@ body {
   }
 
   /* 固定定位元素 (Nav, CTA) 在桌機精準置中 */
-  #main-nav, .home-cta, .review-cta, .settings-cta, .list-assistant-fixed {
+  #main-nav,
+  .home-cta,
+  .review-cta,
+  .settings-cta,
+  .list-assistant-fixed {
     width: min(100%, var(--content-max)) !important;
     left: 50% !important;
     right: auto !important; /* 取消右側貼齊，改用位移置中 */
@@ -119,94 +191,168 @@ body {
   }
 
   /* 首頁卡片自動轉為 4 欄 */
-  #page-home .grid.grid-cols-2 { grid-template-columns: repeat(4, 1fr) !important; }
-  .home-grid-card { aspect-ratio: 4 / 3; }
+  #page-home .grid.grid-cols-2 {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+  .home-grid-card {
+    aspect-ratio: 4 / 3;
+  }
 }
 /* =========================================================
    4) UI 組件
    ========================================================= */
-.home-scroll, .list-scroll, .review-scroll, .settings-scroll { flex: 1; overflow-y: auto; }
+.home-scroll,
+.list-scroll,
+.review-scroll,
+.settings-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
 
 /* 卡片與動畫樣式 */
 .home-grid-card {
-  background: white; border-radius: 2.2rem; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  border: 1px solid #F3F4F6; aspect-ratio: 1/1; cursor: pointer; transition: all .2s; box-shadow: 0 4px 10px rgba(0,0,0,.02);
+  background: white;
+  border-radius: 2.2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #f3f4f6;
+  aspect-ratio: 1/1;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.02);
 }
-.home-grid-card h4 { margin: 0 0 4px 0; font-weight: 900; font-size: 1rem; color: #111827; }
-.home-grid-card p { margin: 0; font-weight: 800; font-size: 0.75rem; color: #6B7280; letter-spacing: 0.08em; }
+.home-grid-card h4 {
+  margin: 0 0 4px 0;
+  font-weight: 900;
+  font-size: 1rem;
+  color: #111827;
+}
+.home-grid-card p {
+  margin: 0;
+  font-weight: 800;
+  font-size: 0.75rem;
+  color: #6b7280;
+  letter-spacing: 0.08em;
+}
 
-.wave-bar { width: 4px; background: var(--brand-color); border-radius: 10px; height: 12px; }
-.recording-active .wave-bar { animation: wave-animation 1.2s infinite; }
-@keyframes wave-animation { 0%, 100% { height: 12px; } 50% { height: 40px; } }
+.wave-bar {
+  width: 4px;
+  background: var(--brand-color);
+  border-radius: 10px;
+  height: 12px;
+}
+.recording-active .wave-bar {
+  animation: wave-animation 1.2s infinite;
+}
+@keyframes wave-animation {
+  0%,
+  100% {
+    height: 12px;
+  }
+  50% {
+    height: 40px;
+  }
+}
 
 /* 固定按鈕容器 */
-.home-cta, .review-cta, .settings-cta {
-  position: fixed; z-index: 35; bottom: calc(var(--nav-h) + var(--safe-bottom));
-  background: white; padding: 16px 24px; border-top: 1px solid rgba(0,0,0,0.03);
+.home-cta,
+.review-cta,
+.settings-cta {
+  position: fixed;
+  z-index: 35;
+  bottom: calc(var(--nav-h) + var(--safe-bottom));
+  background: white;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(0, 0, 0, 0.03);
 }
 
 .active-date {
-  background: white; border: 2px solid var(--brand-color); color: var(--brand-color); width: 50px; padding: 12px 10px; border-radius: 18px; text-align: center; box-shadow: 0 4px 10px rgba(19,181,177,.1);
+  background: white;
+  border: 2px solid var(--brand-color);
+  color: var(--brand-color);
+  width: 50px;
+  padding: 12px 10px;
+  border-radius: 18px;
+  text-align: center;
+  box-shadow: 0 4px 10px rgba(19, 181, 177, 0.1);
 }
 
 /* Modals (FIX) */
-#ai-modal, #confirm-modal{
+#ai-modal,
+#confirm-modal {
   z-index: 100;
   display: none;
-  position: fixed;              /* <- 原本 absolute 改 fixed */
+  position: fixed; /* <- 原本 absolute 改 fixed */
   inset: 0;
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(0,0,0,.45);  /* <- 原本 5 改成 0.45 */
+  background: rgba(0, 0, 0, 0.45); /* <- 原本 5 改成 0.45 */
 }
 
 /* 讓 Modal 內容桌機不會太寬 */
 #ai-modal > div,
-#confirm-modal > div{
+#confirm-modal > div {
   width: min(720px, 100%);
 }
 
 /* Quiz (FIX) */
-.quiz-option{
-  display: block;          /* <- 強制單獨一行 */
+.quiz-option {
+  display: block; /* <- 強制單獨一行 */
   width: 100%;
   box-sizing: border-box;
   text-align: left;
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px solid #F3F4F6;
+  border: 1px solid #f3f4f6;
   background: #fff;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.35;
-  white-space: normal;     /* <- 允許換行 */
-  word-break: break-word;  /* <- 長字不爆版 */
-  transition: transform .15s ease, background-color .15s ease, border-color .15s ease;
+  white-space: normal; /* <- 允許換行 */
+  word-break: break-word; /* <- 長字不爆版 */
+  transition:
+    transform 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease;
 }
 
-.quiz-option:active{ transform: scale(.99); }
+.quiz-option:active {
+  transform: scale(0.99);
+}
 
 /* disabled 時不要被瀏覽器/框架淡化成像文字 */
-.quiz-option:disabled{
+.quiz-option:disabled {
   opacity: 1;
   cursor: default;
 }
 
-.quiz-correct{ background:#dcfce7; border-color:#22c55e; color:#15803d; }
-.quiz-wrong{ background:#fee2e2; border-color:#ef4444; color:#b91c1c; }
+.quiz-correct {
+  background: #dcfce7;
+  border-color: #22c55e;
+  color: #15803d;
+}
+.quiz-wrong {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #b91c1c;
+}
 
 /* 加入 RWD 策略中 */
-.aspect-ratio-1 { aspect-ratio: 1 / 1; }
+.aspect-ratio-1 {
+  aspect-ratio: 1 / 1;
+}
 
 #settings-avatar-grid div:active {
-    transform: scale(0.9);
+  transform: scale(0.9);
 }
 
 /* 讓主頁頭像轉動小動畫，增加質感 */
 .app-header .right-slot div img {
-    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .app-header .right-slot div:hover img {
-    transform: rotate(10deg) scale(1.1);
+  transform: rotate(10deg) scale(1.1);
 }

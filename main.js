@@ -4,15 +4,12 @@
  * =========================================================
  */
 
-// filters
 let currentFilterCategory = "全部";
-let currentFilter = "all"; // 'all' | 'fav'
-let currentFilterDate = null; // 預設為 null，代表不篩選日期
+let currentFilter = "all";
+let currentFilterDate = null;
 
-// env
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-// speech / recording
 let timerInterval;
 let seconds = 0;
 let recognition;
@@ -23,7 +20,6 @@ let recognitionRestartTimer = null;
 let recognitionEndFailCount = 0;
 let lastInterim = "";
 
-// db
 let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
   {
     id: "note-2-1",
@@ -36,82 +32,121 @@ let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
     sections: [
       {
         category: "核心概念",
-        items: ["睡眠並非單一開關，而是由**睡眠中樞**與**清醒中樞**並存且交互影響決定狀態。"],
+        items: [
+          "睡眠並非單一開關，而是由**睡眠中樞**與**清醒中樞**並存且交互影響決定狀態。",
+        ],
       },
       {
         category: "Jouvet 研究 (1959-1962)",
-        items: ["對象：鼠、貓。", "方法：**腦幹切斷術**。觀察切斷後大腦前後段的睡眠現象來推斷位置。"],
+        items: [
+          "對象：鼠、貓。",
+          "方法：**腦幹切斷術**。觀察切斷後大腦前後段的睡眠現象來推斷位置。",
+        ],
       },
       {
         category: "核心結論",
-        items: ["REM 睡眠的主要中樞確定位於**腦幹橋腦 (Pons)**。", "橋腦向上活化大腦皮質，向下抑制動作輸出，形成「大腦活化 x 身體抑制」。"],
+        items: [
+          "REM 睡眠的主要中樞確定位於**腦幹橋腦 (Pons)**。",
+          "橋腦向上活化大腦皮質，向下抑制動作輸出，形成「大腦活化 x 身體抑制」。",
+        ],
       },
     ],
     segments: [
-      { time: "00:00", text: "所以似乎我們的大腦當中，原來在思考的，如果我睡覺好像是有一個開關把它關掉，好像並不是這樣子的。" },
-      { time: "00:15", text: "我們大腦裡面好像有它睡的中樞跟醒的中樞，睡跟醒的中樞它們可能會交互影響，來影響我們的睡眠的狀態。" },
-      { time: "00:30", text: "後來大概比較多的一些技術開始發展出來，能夠對於腦部的活動有多一些瞭解。腦波能夠分辨不同睡眠的階段。" },
-      { time: "01:30", text: "在大概 1959 年到 62 年，有一位法國的學者 Jouvet，他開始透過更進一步、更侵入的腦幹切斷術技術。" },
-      { time: "02:15", text: "他透過切斷我們大腦的不同部位，來找尋睡眠中樞在哪。邏輯是觀測後半部是否仍有睡眠現象來推斷位置。" },
-      { time: "03:00", text: "若切斷在中腦跟橋腦界限（A跟B），發現會出現週期性的快速眼動跟肌肉張力降低，表示周邊機轉仍作用。" },
-      { time: "03:45", text: "若在橋腦跟延腦交界（C）切斷，身體看不到 REM 活動，但腦波與 PGO 銳波顯示大腦內部仍有 REM。" },
-      { time: "04:30", text: "這顯示在 C 點切斷時中樞 REM 存在但周邊輸出被阻斷。由此推論 A B C 之間這段橋腦就是最重要的 REM 睡眠中樞。" },
-      { time: "05:15", text: "發現睡眠中樞的確是在腦幹橋腦。它會往上活化大腦部分，往下去抑制動作輸出，形成大腦活化但身體被抑制的狀態。" },
+      {
+        time: "00:00",
+        text: "所以似乎我們的大腦當中，原來在思考的，如果我睡覺好像是有一個開關把它關掉，好像並不是這樣子的。",
+      },
+      {
+        time: "00:15",
+        text: "我們大腦裡面好像有它睡的中樞跟醒的中樞，睡跟醒的中樞它們可能會交互影響，來影響我們的睡眠的狀態。",
+      },
+      {
+        time: "00:30",
+        text: "後來大概比較多的一些技術開始發展出來，能夠對於腦部的活動有多一些瞭解。腦波能夠分辨不同睡眠的階段。",
+      },
+      {
+        time: "01:30",
+        text: "在大概 1959 年到 62 年，有一位法國的學者 Jouvet，他開始透過更進一步、更侵入的腦幹切斷術技術。",
+      },
+      {
+        time: "02:15",
+        text: "他透過切斷我們大腦的不同部位，來找尋睡眠中樞在哪。邏輯是觀測後半部是否仍有睡眠現象來推斷位置。",
+      },
+      {
+        time: "03:00",
+        text: "若切斷在中腦跟橋腦界限（A跟B），發現會出現週期性的快速眼動跟肌肉張力降低，表示周邊機轉仍作用。",
+      },
+      {
+        time: "03:45",
+        text: "若在橋腦跟延腦交界（C）切斷，身體看不到 REM 活動，但腦波與 PGO 銳波顯示大腦內部仍有 REM。",
+      },
+      {
+        time: "04:30",
+        text: "這顯示在 C 點切斷時中樞 REM 存在但周邊輸出被阻斷。由此推論 A B C 之間這段橋腦就是最重要的 REM 睡眠中樞。",
+      },
+      {
+        time: "05:15",
+        text: "發現睡眠中樞的確是在腦幹橋腦。它會往上活化大腦部分，往下去抑制動作輸出，形成大腦活化但身體被抑制的狀態。",
+      },
     ],
   },
 ];
 
 let currentNoteData = notesLibrary[0];
 
-
-// 載入個人設定
-
-
 let appSettings = JSON.parse(localStorage.getItem("president_settings")) || {
-    nickname: "總裁",
-    avatarSeed: "Panda", // ✨ 預設頭像
-    noteStyle: "standard"
+  nickname: "皮皮",
+  avatarSeed: "Fox",
+  noteStyle: "standard",
 };
 
-// ✨ 定義可選的動物清單
 const animalAvatars = [
-    "Fox", "Cat", "Dog", "Bear" , 
-    "Penguin", "Owl", "Rabbit", "Frog", "Bee", "Butterfly", 
-    "Elephant",  "Zebra", 
-];let tempSelectedAvatar = appSettings.avatarSeed;
+  "Fox",
+  "Cat",
+  "Dog",
+  "Bear",
+  "Penguin",
+  "Owl",
+  "Rabbit",
+  "Frog",
+  "Bee",
+  "Butterfly",
+  "Elephant",
+  "Zebra",
+];
+let tempSelectedAvatar = appSettings.avatarSeed;
 /**
  * =========================================================
  * 1) Utils（小工具）
  * =========================================================
  */
 
-// 渲染設定頁面的頭像選單
-function renderAvatarChoices() {
-    const grid = safeEl("settings-avatar-grid");
-    if (!grid) return;
-    
-    grid.innerHTML = animalAvatars.map(animal => {
-        const isSelected = tempSelectedAvatar === animal;
-        // ✨ 切換為更可愛的 Fun Emoji 風格
-        const avatarUrl = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${animal}`;
-        
-        return `
+function renderAvatarChoices(targetId = "modal-avatar-grid") {
+  const grid = safeEl(targetId);
+  if (!grid) return;
+
+  grid.innerHTML = animalAvatars
+    .map((animal) => {
+      const isSelected = tempSelectedAvatar === animal;
+      const avatarUrl = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${animal}`;
+
+      return `
             <div data-action="select-avatar" data-seed="${animal}" 
-                 class="aspect-square cursor-pointer rounded-2xl border-2 p-2 transition-all hover:scale-105 active:scale-95 ${isSelected ? 'border-[#13B5B1] bg-[#F0F9F9]' : 'border-transparent bg-gray-50'}">
-                <img src="${avatarUrl}" class="w-full h-full object-contain" alt="${animal}">
+                class="aspect-ratio-1 cursor-pointer rounded-2xl border-2 p-1 transition-all ${isSelected ? "border-[#13B5B1] bg-[#F0F9F9]" : "border-transparent bg-gray-50"}">
+                <img src="${avatarUrl}" class="w-full h-full" alt="${animal}">
             </div>
         `;
-    }).join('');
+    })
+    .join("");
 }
 
 /**
  * 將 HTML 日期 (YYYY-MM-DD) 轉換為筆記格式 (M / D)
  */
 function formatHTMLDateToNoteDate(htmlDate) {
-    if (!htmlDate) return null;
-    const [year, month, day] = htmlDate.split('-');
-    // 去掉前導零，例如 "03" 變成 "3"
-    return `${parseInt(month)} / ${parseInt(day)}`;
+  if (!htmlDate) return null;
+  const [year, month, day] = htmlDate.split("-");
+  return `${parseInt(month)} / ${parseInt(day)}`;
 }
 function debounce(fn, delay = 150) {
   let t = null;
@@ -142,32 +177,37 @@ function syncFavoriteUI(note) {
 }
 
 function loadSettingsToUI() {
-    const nickInput = safeEl("settings-nickname");
-    if (nickInput) nickInput.value = appSettings.nickname;
-    tempSelectedAvatar = appSettings.avatarSeed; // 同步目前設定
-    renderAvatarChoices();
+  const nickInput = safeEl("settings-nickname");
+  const previewImg = document.querySelector("#settings-avatar-preview img");
+
+  if (nickInput) nickInput.value = appSettings.nickname;
+
+  if (previewImg) {
+    previewImg.src = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${appSettings.avatarSeed}`;
+  }
+
+  tempSelectedAvatar = appSettings.avatarSeed;
 }
 
 function saveSettingsFromUI() {
-    appSettings.nickname = safeEl("settings-nickname")?.value || "總裁";
-    appSettings.avatarSeed = tempSelectedAvatar; // ✨ 儲存選中的動物
-    
-    localStorage.setItem("president_settings", JSON.stringify(appSettings));
-    updateHomeGreeting();
-    alert("總裁，您的個人檔案已同步更新 ✨");
-    window.navigateTo("page-home");
+  appSettings.nickname = safeEl("settings-nickname")?.value || "總裁";
+  appSettings.avatarSeed = tempSelectedAvatar;
+
+  localStorage.setItem("president_settings", JSON.stringify(appSettings));
+  updateHomeGreeting();
+  alert("總裁，您的個人檔案已同步更新 ✨");
+  window.navigateTo("page-home");
 }
 
+//
 function updateHomeGreeting() {
-    const el = safeEl("home-user-greeting");
-    // ✨ 確保抓取到首頁 Header 的頭像圖片
-    const avatarImg = document.querySelector("#page-home .app-header .right-slot img");
-    
-    if (el) el.innerText = `${appSettings.nickname} 您好 ✨`;
-    if (avatarImg) {
-        // ✨ 同步更換為 Fun Emoji
-        avatarImg.src = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${appSettings.avatarSeed}`;
-    }
+  const el = safeEl("home-user-greeting");
+  const avatarImg = safeEl("home-avatar-img");
+
+  if (el) el.innerText = `${appSettings.nickname} 您好 ✨`;
+  if (avatarImg) {
+    avatarImg.src = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${appSettings.avatarSeed}`;
+  }
 }
 /**
  * =========================================================
@@ -212,16 +252,17 @@ function initRecognition() {
   recognition.onresult = (event) => {
     let interim = "";
     for (let i = event.resultIndex; i < event.results.length; ++i) {
-      if (event.results[i].isFinal) fullTranscript += event.results[i][0].transcript;
+      if (event.results[i].isFinal)
+        fullTranscript += event.results[i][0].transcript;
       else interim += event.results[i][0].transcript;
     }
 
     lastInterim = interim;
 
-    localStorage.setItem("temp_transcript", (fullTranscript + interim) || "");
+    localStorage.setItem("temp_transcript", fullTranscript + interim || "");
 
     const el = safeEl("live-transcript");
-    if (el) el.innerText = (fullTranscript + interim) || "總裁正在聽課...";
+    if (el) el.innerText = fullTranscript + interim || "總裁正在聽課...";
   };
 
   recognition.onend = () => {
@@ -256,12 +297,16 @@ function startRecordPage() {
 
   window.navigateTo("page-record");
   if (recognition) {
-    try { recognition.start(); } catch (_) {}
+    try {
+      recognition.start();
+    } catch (_) {}
   }
 
   timerInterval = setInterval(() => {
     seconds++;
-    const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+    const m = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
     const s = (seconds % 60).toString().padStart(2, "0");
     const t = safeEl("record-timer");
     if (t) t.innerText = `${m}:${s}`;
@@ -280,13 +325,13 @@ async function stopRecording() {
   if (recognition) recognition.stop();
   clearInterval(timerInterval);
 
-  localStorage.setItem("temp_transcript", (fullTranscript + lastInterim) || "");
+  localStorage.setItem("temp_transcript", fullTranscript + lastInterim || "");
 
   const durationText = safeEl("record-timer")?.innerText || "00:00";
   window.navigateTo("page-loading");
 
   const prompt = `你是一位專業筆記助手「總裁」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。逐字稿：${
-    (fullTranscript + lastInterim) || "模擬內容"
+    fullTranscript + lastInterim || "模擬內容"
   }`;
 
   const schema = {
@@ -306,7 +351,10 @@ async function stopRecording() {
       },
       segments: {
         type: "ARRAY",
-        items: { type: "OBJECT", properties: { time: { type: "STRING" }, text: { type: "STRING" } } },
+        items: {
+          type: "OBJECT",
+          properties: { time: { type: "STRING" }, text: { type: "STRING" } },
+        },
       },
     },
   };
@@ -315,7 +363,10 @@ async function stopRecording() {
     const data = await callGemini(prompt, schema);
 
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    const clean = raw.replace(/```json/g, "").replace(/```/g, "").trim();
+    const clean = raw
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
     const result = JSON.parse(clean);
 
     const newNote = {
@@ -351,7 +402,9 @@ async function callGemini(prompt, responseSchema = null, retryCount = 0) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: responseSchema ? { responseMimeType: "application/json", responseSchema } : {},
+    generationConfig: responseSchema
+      ? { responseMimeType: "application/json", responseSchema }
+      : {},
   };
 
   try {
@@ -391,7 +444,11 @@ function renderCategoryFilters() {
 
   const allCategories = [
     "全部",
-    ...new Set(notesLibrary.filter((n) => !n.isDeleted).map((n) => n.category || "未分類")),
+    ...new Set(
+      notesLibrary
+        .filter((n) => !n.isDeleted)
+        .map((n) => n.category || "未分類"),
+    ),
   ];
 
   container.innerHTML = `
@@ -404,7 +461,7 @@ function renderCategoryFilters() {
           <option value="${cat}" ${currentFilterCategory === cat ? "selected" : ""}>
             分類: ${cat}
           </option>
-        `
+        `,
         )
         .join("")}
     </select>
@@ -429,11 +486,13 @@ function renderNoteUI(data) {
         ${(sec.items || [])
           .map(
             (i) => `
-            <li class="text-[12px] text-gray-700 font-bold">• ${String(i).replace(
+            <li class="text-[12px] text-gray-700 font-bold">• ${String(
+              i,
+            ).replace(
               /\*\*(.*?)\*\*/g,
-              '<span class="text-[#13B5B1] font-black">$1</span>'
+              '<span class="text-[#13B5B1] font-black">$1</span>',
             )}</li>
-          `
+          `,
           )
           .join("")}
       </ul>
@@ -465,41 +524,49 @@ function renderNotesList() {
   if (!container) return;
   container.innerHTML = "";
 
-    const filteredNotes = notesLibrary.filter((note) => {
-            const matchesSearch = (note.title || "").toLowerCase().includes(searchTerm);
-            const noteCat = note.category || "未分類";
-            const matchesCategory = currentFilterCategory === "全部" || noteCat === currentFilterCategory;
-            const matchesFavorite = currentFilter === "fav" ? !!note.isFavorite : true;
+  const filteredNotes = notesLibrary.filter((note) => {
+    const matchesSearch = (note.title || "").toLowerCase().includes(searchTerm);
+    const noteCat = note.category || "未分類";
+    const matchesCategory =
+      currentFilterCategory === "全部" || noteCat === currentFilterCategory;
+    const matchesFavorite = currentFilter === "fav" ? !!note.isFavorite : true;
+    const noteDateNorm = (note.date || "").replace(/\s/g, "");
+    const filterDateNorm = (currentFilterDate || "").replace(/\s/g, "");
+    const matchesDate = !currentFilterDate || noteDateNorm === filterDateNorm;
 
-        // ✨ 修正：移除兩側空格再比對，增加穩定度
-            const noteDateNorm = (note.date || "").replace(/\s/g, "");
-            const filterDateNorm = (currentFilterDate || "").replace(/\s/g, "");
-            const matchesDate = !currentFilterDate || noteDateNorm === filterDateNorm;
+    return (
+      matchesSearch &&
+      matchesCategory &&
+      matchesFavorite &&
+      matchesDate &&
+      !note.isDeleted
+    );
+  });
 
-            return matchesSearch && matchesCategory && matchesFavorite && matchesDate && !note.isDeleted;
-        });
+  const clearBtn = safeEl("clear-date-btn");
+  if (clearBtn) clearBtn.classList.toggle("hidden", !currentFilterDate);
 
-        // ✨ 新增：同步清除按鈕的顯示狀態
-        const clearBtn = safeEl("clear-date-btn");
-        if (clearBtn) clearBtn.classList.toggle("hidden", !currentFilterDate);
-
-        if (filteredNotes.length === 0) {
-            const msg = currentFilterDate ? `${currentFilterDate} 沒有紀錄` : "目前沒有筆記";
-            container.innerHTML = `
+  if (filteredNotes.length === 0) {
+    const msg = currentFilterDate
+      ? `${currentFilterDate} 沒有紀錄`
+      : "目前沒有筆記";
+    container.innerHTML = `
             <div class="flex flex-col items-center justify-center py-20 text-gray-300 opacity-60">
                 <i class="fas fa-file-invoice-alt text-4xl mb-4"></i>
                 <p class="text-sm font-black">${msg}</p>
                 <p class="text-[10px] mt-2 italic">總裁，點擊右下角麥克風開始錄音 ✨</p>
             </div>
             `;
-            return;
-        }
+    return;
+  }
 
   filteredNotes.forEach((note) => {
     const wrapper = document.createElement("div");
     wrapper.className = "flex gap-4 items-start mb-6 w-full";
 
-    const starHtml = note.isFavorite ? `<i class="fas fa-star text-yellow-400 text-[10px] ml-1"></i>` : "";
+    const starHtml = note.isFavorite
+      ? `<i class="fas fa-star text-yellow-400 text-[10px] ml-1"></i>`
+      : "";
     const dateParts = (note.date || "1 / 1").split("/");
     const month = dateParts[0] ? dateParts[0].trim() : "1";
     const day = dateParts[1] ? dateParts[1].trim() : "1";
@@ -587,7 +654,7 @@ function renderTrashList() {
           </button>
         </div>
       </div>
-    `
+    `,
     )
     .join("");
 }
@@ -638,11 +705,15 @@ function filterNotes(type) {
 
   if (allTab && favTab) {
     if (type === "fav") {
-      favTab.className = "text-xs font-bold text-[#13B5B1] cursor-pointer border-b-2 border-[#13B5B1] pb-1 transition-all";
-      allTab.className = "text-xs font-bold text-gray-300 cursor-pointer pb-1 transition-all";
+      favTab.className =
+        "text-xs font-bold text-[#13B5B1] cursor-pointer border-b-2 border-[#13B5B1] pb-1 transition-all";
+      allTab.className =
+        "text-xs font-bold text-gray-300 cursor-pointer pb-1 transition-all";
     } else {
-      allTab.className = "text-xs font-bold text-[#13B5B1] cursor-pointer border-b-2 border-[#13B5B1] pb-1 transition-all";
-      favTab.className = "text-xs font-bold text-gray-300 cursor-pointer pb-1 transition-all";
+      allTab.className =
+        "text-xs font-bold text-[#13B5B1] cursor-pointer border-b-2 border-[#13B5B1] pb-1 transition-all";
+      favTab.className =
+        "text-xs font-bold text-gray-300 cursor-pointer pb-1 transition-all";
     }
   }
 
@@ -655,7 +726,9 @@ function editNoteTitle() {
     currentNoteData.title = newTitle.trim();
     safeEl("content-title").innerText = newTitle.trim();
 
-    const noteIndex = notesLibrary.findIndex((n) => n.id === currentNoteData.id);
+    const noteIndex = notesLibrary.findIndex(
+      (n) => n.id === currentNoteData.id,
+    );
     if (noteIndex !== -1) {
       notesLibrary[noteIndex].title = newTitle.trim();
       saveNotesToDisk();
@@ -687,7 +760,13 @@ function openConfirmModal() {
 }
 
 function changeCategory() {
-  const dynamicCats = [...new Set(notesLibrary.filter((n) => !n.isDeleted).map((n) => n.category || "未分類"))];
+  const dynamicCats = [
+    ...new Set(
+      notesLibrary
+        .filter((n) => !n.isDeleted)
+        .map((n) => n.category || "未分類"),
+    ),
+  ];
   const presets = ["心理學", "生物學", "通識課", "待處理"];
   const finalCategories = [...new Set([...dynamicCats, ...presets])];
 
@@ -750,7 +829,6 @@ function setCategory(cat) {
   closeModal();
 }
 
-// soft delete
 function softDeleteNote(noteId) {
   const note = notesLibrary.find((n) => n.id === noteId);
   if (!note) return;
@@ -767,7 +845,6 @@ function softDeleteNote(noteId) {
   }
 }
 
-// restore
 function restoreNote(noteId) {
   const note = notesLibrary.find((n) => n.id === noteId);
   if (note) {
@@ -779,7 +856,6 @@ function restoreNote(noteId) {
   }
 }
 
-// perm delete single
 function permanentDeleteNote(noteId) {
   if (confirm("此動作無法復原，確定永久刪除？")) {
     notesLibrary = notesLibrary.filter((n) => n.id !== noteId);
@@ -788,7 +864,6 @@ function permanentDeleteNote(noteId) {
   }
 }
 
-// clear all
 function permanentClearAll() {
   const hasDeletedItems = notesLibrary.some((n) => n.isDeleted);
   if (!hasDeletedItems) return;
@@ -843,7 +918,10 @@ async function generateQuiz() {
   try {
     const data = await callGemini(prompt, schema);
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    const cleanJson = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+    const cleanJson = rawText
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
     const result = JSON.parse(cleanJson);
 
     let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 總裁的小考時間</h3>`;
@@ -862,7 +940,7 @@ async function generateQuiz() {
                     data-selected="${oIdx}"
                     data-correct="${q.answer}"
                   >${opt}</button>
-                `
+                `,
               )
               .join("")}
           </div>
@@ -925,65 +1003,79 @@ async function exportToPDF() {
   }
 }
 
-
 /**
  * =========================================================
  * 智能複習中心專用邏輯
  * =========================================================
  */
-let selectedReviewNotes = new Set(); // 記錄使用者勾選的筆記 ID
+let selectedReviewNotes = new Set();
 
-// 1. 渲染複習中心的學科與筆記清單
 function renderReviewSelection() {
-    const catContainer = safeEl("review-cat-tags");
-    const noteContainer = safeEl("review-note-list");
-    if (!catContainer || !noteContainer) return;
+  const catContainer = safeEl("review-cat-tags");
+  const noteContainer = safeEl("review-note-list");
+  if (!catContainer || !noteContainer) return;
 
-    // 取得不重複分類
-    const categories = [...new Set(notesLibrary.filter(n => !n.isDeleted).map(n => n.category || "未分類"))];
-    
-    catContainer.innerHTML = categories.map(cat => `
+  const categories = [
+    ...new Set(
+      notesLibrary
+        .filter((n) => !n.isDeleted)
+        .map((n) => n.category || "未分類"),
+    ),
+  ];
+
+  catContainer.innerHTML = categories
+    .map(
+      (cat) => `
         <button data-action="review-filter-cat" data-cat="${cat}" class="px-4 py-2 rounded-xl bg-white border border-gray-100 text-[11px] font-bold text-gray-500 active:bg-[#13B5B1] active:text-white transition-all">
             ${cat}
         </button>
-    `).join('');
+    `,
+    )
+    .join("");
 
-    // 渲染所有可用筆記
-    const availableNotes = notesLibrary.filter(n => !n.isDeleted);
-    noteContainer.innerHTML = availableNotes.map(note => `
+  const availableNotes = notesLibrary.filter((n) => !n.isDeleted);
+  noteContainer.innerHTML = availableNotes
+    .map(
+      (note) => `
         <div class="flex items-center gap-4 bg-white p-4 rounded-2xl border border-gray-50 shadow-sm cursor-pointer" data-action="review-toggle-note" data-id="${note.id}">
-            <div class="w-6 h-6 rounded-lg border-2 border-gray-100 flex items-center justify-center transition-all ${selectedReviewNotes.has(note.id) ? 'bg-[#13B5B1] border-[#13B5B1]' : ''}">
-                ${selectedReviewNotes.has(note.id) ? '<i class="fas fa-check text-white text-[10px]"></i>' : ''}
+            <div class="w-6 h-6 rounded-lg border-2 border-gray-100 flex items-center justify-center transition-all ${selectedReviewNotes.has(note.id) ? "bg-[#13B5B1] border-[#13B5B1]" : ""}">
+                ${selectedReviewNotes.has(note.id) ? '<i class="fas fa-check text-white text-[10px]"></i>' : ""}
             </div>
             <div class="flex-1">
                 <h4 class="text-xs font-black text-gray-800">${note.title}</h4>
-                <p class="text-[9px] text-gray-400 font-bold">${note.category || '未分類'} · ${note.date}</p>
+                <p class="text-[9px] text-gray-400 font-bold">${note.category || "未分類"} · ${note.date}</p>
             </div>
         </div>
-    `).join('');
+    `,
+    )
+    .join("");
 
-    // 更新開始按鈕狀態
-    const startBtn = safeEl("btn-start-review");
-    if (startBtn) {
-        startBtn.disabled = selectedReviewNotes.size === 0;
-        startBtn.style.opacity = selectedReviewNotes.size === 0 ? "0.5" : "1";
-    }
+  const startBtn = safeEl("btn-start-review");
+  if (startBtn) {
+    startBtn.disabled = selectedReviewNotes.size === 0;
+    startBtn.style.opacity = selectedReviewNotes.size === 0 ? "0.5" : "1";
+  }
 }
 
-// 2. 核心 AI 跨領域出題邏輯
 async function startSmartReviewQuiz() {
-    if (selectedReviewNotes.size === 0) return;
+  if (selectedReviewNotes.size === 0) return;
 
-    const notesToReview = notesLibrary.filter(n => selectedReviewNotes.has(n.id));
-    // 整合多篇筆記的重點內容
-    const combinedContent = notesToReview.map(n => {
-        const sectionsText = (n.sections || []).map(s => `[${s.category}] ${s.items.join(' ')}`).join('\n');
-        return `筆記標題: ${n.title}\n分類: ${n.category}\n內容: ${sectionsText}`;
-    }).join('\n\n---\n\n');
+  const notesToReview = notesLibrary.filter((n) =>
+    selectedReviewNotes.has(n.id),
+  );
 
-    showModal("✨ 總裁正在進行出題...");
+  const combinedContent = notesToReview
+    .map((n) => {
+      const sectionsText = (n.sections || [])
+        .map((s) => `[${s.category}] ${s.items.join(" ")}`)
+        .join("\n");
+      return `筆記標題: ${n.title}\n分類: ${n.category}\n內容: ${sectionsText}`;
+    })
+    .join("\n\n---\n\n");
 
-    const prompt = `你是一位嚴謹的教授「認知破壞終結者」。請針對以下提供的多篇筆記內容，出一份具備「深度聯繫」的 5 題單選題測驗。
+  showModal("✨ 總裁正在進行出題...");
+
+  const prompt = `你是一位嚴謹的教授「認知破壞終結者」。請針對以下提供的多篇筆記內容，出一份具備「深度聯繫」的 5 題單選題測驗。
 題目必須包含：
 1. 針對單一筆記內容的重點考核。
 2. 跨筆記（跨領域）的比較或關聯性問題（例如：A與B概念有何共同點？）。
@@ -992,49 +1084,56 @@ async function startSmartReviewQuiz() {
 {"questions": [{"question": "題目", "options": ["選項1","選項2","選項3","選項4"], "answer": 0}]}
 內容如下：\n${combinedContent}`;
 
-    const schema = {
-        type: "OBJECT",
-        properties: {
-            questions: {
-                type: "ARRAY",
-                items: {
-                    type: "OBJECT",
-                    properties: {
-                        question: { type: "STRING" },
-                        options: { type: "ARRAY", items: { type: "STRING" }, minItems: 4 },
-                        answer: { type: "NUMBER" },
-                    },
-                    required: ["question", "options", "answer"],
-                },
-            },
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      questions: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            question: { type: "STRING" },
+            options: { type: "ARRAY", items: { type: "STRING" }, minItems: 4 },
+            answer: { type: "NUMBER" },
+          },
+          required: ["question", "options", "answer"],
         },
-        required: ["questions"],
-    };
+      },
+    },
+    required: ["questions"],
+  };
 
-    try {
-        const data = await callGemini(prompt, schema);
-        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-        const cleanJson = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
-        const result = JSON.parse(cleanJson);
+  try {
+    const data = await callGemini(prompt, schema);
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const cleanJson = rawText
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+    const result = JSON.parse(cleanJson);
 
-        // 渲染題目 (複用現有的 modal 顯示邏輯)
-        let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 認知破壞挑戰：跨領域戰役</h3>`;
-        result.questions.forEach((q, qIdx) => {
-            html += `
+    let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 認知破壞挑戰：跨領域戰役</h3>`;
+    result.questions.forEach((q, qIdx) => {
+      html += `
                 <div class="mb-8 border-b border-gray-50 pb-6">
                     <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${q.question}</p>
                     <div class="space-y-2">
-                        ${q.options.map((opt, oIdx) => `
+                        ${q.options
+                          .map(
+                            (opt, oIdx) => `
                             <button type="button" class="quiz-option" data-action="quiz-answer" data-selected="${oIdx}" data-correct="${q.answer}">${opt}</button>
-                        `).join("")}
+                        `,
+                          )
+                          .join("")}
                     </div>
                 </div>`;
-        });
-        safeEl("modal-content").innerHTML = html;
-    } catch (err) {
-        console.error("出題失敗：", err);
-        safeEl("modal-content").innerHTML = `<div class="text-center py-10"><p class="text-xs font-bold text-gray-400">連線失敗，請確認網路或 API Key。</p></div>`;
-    }
+    });
+    safeEl("modal-content").innerHTML = html;
+  } catch (err) {
+    console.error("出題失敗：", err);
+    safeEl("modal-content").innerHTML =
+      `<div class="text-center py-10"><p class="text-xs font-bold text-gray-400">連線失敗，請確認網路或 API Key。</p></div>`;
+  }
 }
 
 /**
@@ -1043,44 +1142,45 @@ async function startSmartReviewQuiz() {
  * =========================================================
  */
 
-
 Object.assign(window, {
   navigateTo: (pageId) => {
-    document.querySelectorAll(".page").forEach((p) => p.classList.add("hidden"));
+    document
+      .querySelectorAll(".page")
+      .forEach((p) => p.classList.add("hidden"));
     safeEl(pageId).classList.remove("hidden");
 
     const nav = safeEl("main-nav");
-    if (pageId === "page-record" || pageId === "page-loading") nav.classList.add("hidden");
+    if (pageId === "page-record" || pageId === "page-loading")
+      nav.classList.add("hidden");
     else nav.classList.remove("hidden");
 
     if (pageId === "page-list") {
-        renderCategoryFilters();
-        renderNotesList(); // 這會根據 currentFilterDate 重新渲染
+      renderCategoryFilters();
+      renderNotesList();
     }
     if (pageId === "page-trash") {
       renderTrashList();
     }
     if (pageId === "page-review") {
-        selectedReviewNotes.clear(); // 每次進入清空，讓總裁重新挑選
-        renderReviewSelection();
+      selectedReviewNotes.clear();
+      renderReviewSelection();
     }
     if (pageId === "page-settings") loadSettingsToUI();
-    
 
     updateNavUI(pageId);
   },
 
-    filterByDate: (val) => {
-        currentFilterDate = formatHTMLDateToNoteDate(val); // ✅ 用同一個函式
-        renderNotesList();
-    },
+  filterByDate: (val) => {
+    currentFilterDate = formatHTMLDateToNoteDate(val);
+    renderNotesList();
+  },
 
-    clearDateFilter: () => {
-        currentFilterDate = null;
-        const input = document.getElementById("date-filter");
-        if (input) input.value = "";
-        renderNotesList();
-    },
+  clearDateFilter: () => {
+    currentFilterDate = null;
+    const input = document.getElementById("date-filter");
+    if (input) input.value = "";
+    renderNotesList();
+  },
 
   loadNoteDetails: (id) => {
     const note = notesLibrary.find((n) => n.id === id);
@@ -1091,7 +1191,6 @@ Object.assign(window, {
     }
   },
 
-  // expose a few
   closeModal,
   closeConfirmModal,
 });
@@ -1103,33 +1202,33 @@ Object.assign(window, {
  */
 
 (function bindUIEvents() {
-  const call = (fn, ...args) => (typeof fn === "function" ? fn(...args) : undefined);
+  const call = (fn, ...args) =>
+    typeof fn === "function" ? fn(...args) : undefined;
 
   document.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-action], [data-page], [data-filter], [data-list-view], [data-content-view]");
+    const el = e.target.closest(
+      "[data-action], [data-page], [data-filter], [data-list-view], [data-content-view]",
+    );
     if (!el) return;
 
     const action = el.dataset.action;
 
     if (action === "select-avatar") {
-        tempSelectedAvatar = el.dataset.seed;
-        renderAvatarChoices();
-        return;
+      tempSelectedAvatar = el.dataset.seed;
+      renderAvatarChoices();
+      return;
     }
 
-    // page
     if (el.dataset.page) {
       window.navigateTo(el.dataset.page);
       return;
     }
 
-    // list filter
     if (el.dataset.filter) {
       filterNotes(el.dataset.filter);
       return;
     }
 
-    // list view tabs
     if (el.dataset.listView) {
       const isNote = el.dataset.listView === "note";
       safeEl("list-tab-note").className = isNote
@@ -1141,7 +1240,6 @@ Object.assign(window, {
       return;
     }
 
-    // content view tabs
     if (el.dataset.contentView) {
       const isNote = el.dataset.contentView === "note";
       safeEl("view-note").classList.toggle("hidden", !isNote);
@@ -1155,53 +1253,87 @@ Object.assign(window, {
       return;
     }
 
-
     switch (action) {
-        case "save-settings": saveSettingsFromUI(); break;
-        case "clear-all-data": if(confirm("清除？")) { localStorage.clear(); location.reload(); } break;
-        case "open-date-picker": {
-            // 點擊圖示，主動觸發原生日期選擇器
-            const dateInput = safeEl("date-filter");
-            if (dateInput && typeof dateInput.showPicker === "function") {
-                dateInput.showPicker();
-            } else if (dateInput) {
-                dateInput.click();
-            }
-            break;
-        }
+      case "open-avatar-modal": {
+        const modalContent = safeEl("modal-content");
 
-        case "clear-date": {
-            // 呼叫您在 Object.assign(window) 裡定義好的清除函數
-            window.clearDateFilter();
-            break;
+        modalContent.innerHTML = `
+        <h3 class="text-lg font-black mb-6 text-gray-800 flex items-center gap-2">
+            <i class="fas fa-paw text-[#13B5B1]"></i> 選擇頭貼
+        </h3>
+        <div id="modal-avatar-grid" class="grid grid-cols-4 gap-3 mb-4"></div>
+        <p class="text-[10px] text-center text-gray-300 font-bold uppercase tracking-widest">點擊上方圖示即可即時套用預覽</p>
+        `;
+        renderAvatarChoices("modal-avatar-grid");
+        safeEl("ai-modal").style.display = "flex";
+        break;
+      }
+
+      case "select-avatar": {
+        tempSelectedAvatar = el.dataset.seed;
+        renderAvatarChoices("modal-avatar-grid");
+        const previewImg = document.querySelector(
+          "#settings-avatar-preview img",
+        );
+        if (previewImg) {
+          previewImg.src = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${tempSelectedAvatar}`;
         }
-        case "review-toggle-note": {
-            const id = el.dataset.id;
-            if (selectedReviewNotes.has(id)) selectedReviewNotes.delete(id);
-            else selectedReviewNotes.add(id);
-            renderReviewSelection();
-            break;
+        break;
+      }
+      case "save-settings":
+        saveSettingsFromUI();
+        break;
+      case "clear-all-data":
+        if (confirm("清除？")) {
+          localStorage.clear();
+          location.reload();
         }
-        case "review-filter-cat": {
-            const cat = el.dataset.cat;
-            // 一鍵勾選該分類下的所有筆記
-            notesLibrary.forEach(n => {
-                if (!n.isDeleted && (n.category === cat || (!n.category && cat === "未分類"))) {
-                    selectedReviewNotes.add(n.id);
-                }
-            });
-            renderReviewSelection();
-            break;
+        break;
+      case "open-date-picker": {
+        const dateInput = safeEl("date-filter");
+        if (dateInput && typeof dateInput.showPicker === "function") {
+          dateInput.showPicker();
+        } else if (dateInput) {
+          dateInput.click();
         }
-        case "review-select-all": {
-            notesLibrary.forEach(n => { if (!n.isDeleted) selectedReviewNotes.add(n.id); });
-            renderReviewSelection();
-            break;
-        }
-        case "run-smart-quiz": {
-            call(startSmartReviewQuiz);
-            break;
-        }
+        break;
+      }
+
+      case "clear-date": {
+        window.clearDateFilter();
+        break;
+      }
+      case "review-toggle-note": {
+        const id = el.dataset.id;
+        if (selectedReviewNotes.has(id)) selectedReviewNotes.delete(id);
+        else selectedReviewNotes.add(id);
+        renderReviewSelection();
+        break;
+      }
+      case "review-filter-cat": {
+        const cat = el.dataset.cat;
+        notesLibrary.forEach((n) => {
+          if (
+            !n.isDeleted &&
+            (n.category === cat || (!n.category && cat === "未分類"))
+          ) {
+            selectedReviewNotes.add(n.id);
+          }
+        });
+        renderReviewSelection();
+        break;
+      }
+      case "review-select-all": {
+        notesLibrary.forEach((n) => {
+          if (!n.isDeleted) selectedReviewNotes.add(n.id);
+        });
+        renderReviewSelection();
+        break;
+      }
+      case "run-smart-quiz": {
+        call(startSmartReviewQuiz);
+        break;
+      }
       case "start-record":
         call(startRecordPage);
         break;
@@ -1301,14 +1433,14 @@ Object.assign(window, {
     }
   });
 
-  // keyboard accessibility: Enter triggers click for buttons with role=button/tabindex
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
-    const el = e.target.closest("[data-page], [data-filter], [data-action], [data-list-view], [data-content-view]");
+    const el = e.target.closest(
+      "[data-page], [data-filter], [data-action], [data-list-view], [data-content-view]",
+    );
     if (el) el.click();
   });
 
-  // category dropdown change
   document.addEventListener("change", (e) => {
     const sel = e.target.closest("#category-filter-container select");
     if (!sel) return;
@@ -1316,7 +1448,6 @@ Object.assign(window, {
     renderNotesList();
   });
 
-  // backdrop close
   const confirmModal = safeEl("confirm-modal");
   if (confirmModal) {
     confirmModal.addEventListener("click", (e) => {
@@ -1340,23 +1471,24 @@ Object.assign(window, {
 
 function syncLayoutHeights() {
   const nav = document.getElementById("main-nav");
-  const homeCta = document.querySelector(".home-cta"); // 改用 class 抓
+  const homeCta = document.querySelector(".home-cta");
   const reviewCta = document.querySelector(".review-cta");
   const assistant = document.querySelector(".list-assistant-fixed");
 
   const root = document.documentElement;
   if (nav) root.style.setProperty("--nav-h", `${nav.offsetHeight}px`);
-  if (homeCta) root.style.setProperty("--home-cta-h", `${homeCta.offsetHeight}px`);
-  if (reviewCta) root.style.setProperty("--review-cta-h", `${reviewCta.offsetHeight}px`);
-  if (assistant) root.style.setProperty("--assistant-h", `${assistant.offsetHeight}px`);
+  if (homeCta)
+    root.style.setProperty("--home-cta-h", `${homeCta.offsetHeight}px`);
+  if (reviewCta)
+    root.style.setProperty("--review-cta-h", `${reviewCta.offsetHeight}px`);
+  if (assistant)
+    root.style.setProperty("--assistant-h", `${assistant.offsetHeight}px`);
 }
 
-// ✅ 取代你原本的事件監聽
 window.addEventListener("load", () => {
   initRecognition();
+  updateHomeGreeting();
   syncLayoutHeights();
-
-  // 第一次載入時，等 Tailwind/字型/圖片 layout 穩定後再補一次（避免初始量到 0）
   requestAnimationFrame(syncLayoutHeights);
   setTimeout(syncLayoutHeights, 200);
 });
@@ -1364,11 +1496,10 @@ window.addEventListener("load", () => {
 window.addEventListener("resize", syncLayoutHeights);
 window.addEventListener("orientationchange", syncLayoutHeights);
 
-// ✅ 建議再加：內容動態變高（像 assistant 或 CTA 文案變動）也能即時刷新
-(function observeLayoutHeights(){
+(function observeLayoutHeights() {
   const ro = new ResizeObserver(() => syncLayoutHeights());
   const ids = ["main-nav"];
-  ids.forEach(id => {
+  ids.forEach((id) => {
     const el = document.getElementById(id);
     if (el) ro.observe(el);
   });
@@ -1379,30 +1510,24 @@ window.addEventListener("orientationchange", syncLayoutHeights);
     document.querySelector(".list-assistant-fixed"),
   ].filter(Boolean);
 
-  els.forEach(el => ro.observe(el));
+  els.forEach((el) => ro.observe(el));
 })();
 
-// iOS Safari: 地址列收合、鍵盤彈出會改 viewport，這個超有感
 if (window.visualViewport) {
   window.visualViewport.addEventListener("resize", syncLayoutHeights);
 }
 
-// ✅ 元件高度變了也自動更新（文案變長、按鈕樣式變大、tab 切換造成高度變動）
 const ro = new ResizeObserver(() => syncLayoutHeights());
 ["main-nav", "page-home", "page-list", "page-review"].forEach((id) => {
   const el = document.getElementById(id);
   if (el) ro.observe(el);
 });
 
-// 你切頁 navigateTo 時，有時候 hidden/display 會讓量測變化，保險：
-// 在每次切頁後也補量一次（不改你原本架構，只是包一層）
 const _oldNavigateTo = window.navigateTo;
 if (typeof _oldNavigateTo === "function") {
   window.navigateTo = (pageId) => {
     _oldNavigateTo(pageId);
-    // 等 DOM 更新完成後量
     requestAnimationFrame(syncLayoutHeights);
     setTimeout(syncLayoutHeights, 50);
   };
 }
-
