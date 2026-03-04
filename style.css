@@ -11,7 +11,10 @@
 
   --nav-h: 96px;
   --app-header-h: 64px;
-  --content-max: 1280px;
+
+  /* ✅ 桌機置中寬度加寬 */
+  --content-max: 1440px;
+
   --content-pad: 24px;
 
   --cta-h: 88px;
@@ -152,13 +155,14 @@ body {
 .review-scroll,
 .settings-scroll,
 .page-trash > .flex-1 {
+  /* ✅ 只鎖定回收站「主要滾動容器」，避免誤傷卡片內的 flex-1 */
   flex: 1;
   overflow-y: auto;
   padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + var(--cta-h));
 }
 
 .review-scroll,
-.page-trash .flex-1 {
+.page-trash > .flex-1 {
   padding-top: 0;
 }
 
