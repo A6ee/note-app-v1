@@ -1,58 +1,64 @@
 /* =========================================================
-   0) CSS Variables
+   0) Variables & Base
    ========================================================= */
 :root {
-  --brand-color: #13B5B1;
-  --brand-light: #F0F9F9;
-  --brand-accent: #FFA800;
-
-  --bg-page: #FDFDFD;
-  --text-dark: #1A1A1A;
+  --brand-color: #13b5b1;
+  --brand-light: #f0f9f9;
+  --brand-accent: #ffa800;
+  --bg-page: #fdfdfd;
+  --text-dark: #1a1a1a;
   --text-gray: #999999;
+
+  --nav-h: 96px;
+  --app-header-h: 64px;
+
+  /* ✅ 桌機置中寬度加寬 */
+  --content-max: 1440px;
+
+  --content-pad: 24px;
+
+  --cta-h: 88px;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f3f4f6;
+  overflow-x: hidden;
+  font-family: "Noto Sans TC", sans-serif !important;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hidden {
+  display: none !important;
 }
 
 /* =========================================================
-   1) Base / Global
+   1) App Shell & Page
    ========================================================= */
-
-/* 1) 預設電腦模式：顯示手機框 */
-body {
-  background-color: #E2E8F0;
-  margin: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  overflow: hidden;
-}
-
-/* 全站字體（避開 FontAwesome） */
-body, input, button, select, textarea {
-  font-family: 'Noto Sans TC', sans-serif !important;
-}
-
-/* FontAwesome 圖示字體修正 */
-.fas, .far, .fab, .fa-solid, .fa-regular, .fa-brands {
-  font-family: "Font Awesome 6 Free" !important;
-  font-weight: 900;
-}
-
-/* Phone frame container */
 .phone-container {
-  width: 375px;
-  height: 812px;
+  width: 100vw;
+  height: 100dvh;
   background: white;
   position: relative;
-  box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.4);
   overflow: hidden;
-  border-radius: 48px;
-  border: 10px solid #1a1a1a;
-  margin: 20px auto;
   display: flex;
   flex-direction: column;
 }
 
-/* Page base */
 .page {
   position: absolute;
   inset: 0;
@@ -64,134 +70,190 @@ body, input, button, select, textarea {
   transition: opacity 0.3s ease;
 }
 
-.hidden { display: none !important; }
-
-/* Remove scrollbars */
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-/* sticky header background safety */
-.sticky { background-color: white; }
-
 /* =========================================================
-   2) Mobile Safe-Area Adaptation
+   2) Bottom Navigation
    ========================================================= */
-@media (max-width: 500px) {
-  body {
-    background-color: white;
-    display: block;
-    margin: 0;
-    height: 100%;
-    overflow: hidden; /* 避免橡皮筋回彈 */
-  }
-
-  .phone-container {
-    width: 100vw;
-    height: 100dvh; /* 解決底部工具列遮擋 */
-    border: none;
-    border-radius: 0;
-    margin: 0;
-    box-shadow: none;
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* 頂部避開瀏海 */
-  .sticky.top-0,
-  #page-list .sticky,
-  header {
-    padding-top: env(safe-area-inset-top, 20px) !important;
-    background: white;
-  }
-
-  /* 底部避開 Home bar */
-  #main-nav {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
-    height: auto !important;
-    background: white;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
-  }
-
-  /* 確保頁面內容不被底部導覽擋住 */
-  .page {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
-  }
-}
-
-/* =========================================================
-   3) Components
-   ========================================================= */
-
-/* Timeline */
-.timeline-container { position: relative; padding-left: 32px; }
-.timeline-line {
-  position: absolute;
-  left: 14px;
-  top: 10px;
+#main-nav {
+  position: fixed;
   bottom: 0;
-  width: 2px;
-  background-color: #F1F1F1;
-}
-.timeline-dot {
-  position: absolute;
-  left: 10px;
-  top: 6px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background-color: #E0E0E0;
-  border: 2px solid white;
-  z-index: 10;
-}
-.timeline-dot.active {
-  background-color: var(--brand-color);
-  box-shadow: 0 0 0 4px var(--brand-light);
-  border: 2px solid white;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: white;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
+  padding-bottom: calc(var(--safe-bottom) + 12px) !important;
 }
 
-/* Note highlight card */
-.note-highlight {
-  background-color: var(--brand-light);
-  border-left: 6px solid var(--brand-color);
-  border-radius: 2px 24px 24px 24px;
-  margin-bottom: 1.5rem;
-  padding: 1.5rem;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+.nav-item-active {
+  color: var(--brand-color);
+}
+.nav-item-inactive {
+  color: #d1d5db;
 }
 
-/* Active date pill (統一只保留一份，避免覆蓋陷阱) */
-.active-date {
-  background: linear-gradient(135deg, #13B5B1 0%, #0E9A97 100%);
-  color: white;
-  width: 50px;
-  padding: 12px 10px;
-  border-radius: 18px;
+/* =========================================================
+   3) Standardized Header (三段式標頭)
+   ========================================================= */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: white;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+
+  height: calc(var(--safe-top) + var(--app-header-h));
+  padding-top: var(--safe-top);
+
+  padding-left: var(--content-pad);
+  padding-right: var(--content-pad);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-content-wrapper {
+  width: 100%;
+  max-width: var(--content-max);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.left-slot,
+.right-slot {
+  width: 84px;
+  min-width: 84px;
+  display: flex;
+  align-items: center;
+}
+
+.right-slot {
+  justify-content: flex-end;
+}
+
+.center-slot {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  box-shadow: 0 4px 12px rgba(19, 181, 177, 0.2);
 }
 
-/* Nav states */
-.nav-item-active { color: var(--brand-color); }
-.nav-item-inactive { color: #D1D5DB; }
-
-/* Recording wave */
-.wave-bar {
-  width: 4px;
-  background-color: var(--brand-color);
-  border-radius: 10px;
-  height: 12px;
-  transition: height 0.1s ease;
+.app-header .right-slot div img {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.recording-active .wave-bar { animation: wave-animation 1.2s ease-in-out infinite; }
-@keyframes wave-animation {
-  0%, 100% { height: 12px; }
-  50% { height: 40px; }
+.app-header .right-slot div:hover img {
+  transform: rotate(10deg) scale(1.1);
 }
 
-/* Tabs */
-.tab-btn { transition: all 0.3s ease; }
+/* =========================================================
+   4) Scroll Areas (預留底部 fixed 區塊空間，避免被蓋住)
+   ========================================================= */
+.home-scroll,
+.list-scroll,
+.review-scroll,
+.settings-scroll,
+.page-trash > .flex-1 {
+  /* ✅ 只鎖定回收站「主要滾動容器」，避免誤傷卡片內的 flex-1 */
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + var(--cta-h));
+}
 
-/* Home grid cards */
+.review-scroll,
+.page-trash > .flex-1 {
+  padding-top: 0;
+}
+
+/* =========================================================
+   5) Fixed Components (CTA / Assistant)
+   ========================================================= */
+.home-cta,
+.review-cta,
+.settings-cta,
+.trash-cta,
+.list-assistant-fixed {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 35;
+  bottom: calc(var(--nav-h) + var(--safe-bottom));
+  background: white;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(0, 0, 0, 0.03);
+}
+
+.list-assistant-fixed {
+  background: transparent;
+  border-top: none;
+  pointer-events: none;
+}
+.list-assistant-fixed > * {
+  pointer-events: auto;
+}
+
+.trash-cta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.trash-cta button {
+  flex: 1;
+  height: 54px;
+  border-radius: 2.5rem;
+  font-weight: 900;
+  font-size: 14px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* =========================================================
+   6) RWD 核心策略 (桌機版置中)
+   ========================================================= */
+@media (min-width: 900px) {
+  /* 首頁卡片 4 欄 */
+  #page-home .grid.grid-cols-2 {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+  .home-grid-card {
+    aspect-ratio: 4 / 3;
+  }
+
+  /* 滾動內容容器置中 */
+  .rwd-content-wrapper,
+  .home-content,
+  .list-scroll > div,
+  .review-scroll > div,
+  #trash-container {
+    max-width: var(--content-max) !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    width: 100% !important;
+  }
+
+  /* ✅ 固定定位元素：桌機置中（補上 trash-cta / assistant） */
+  #main-nav,
+  .home-cta,
+  .review-cta,
+  .settings-cta,
+  .trash-cta,
+  .list-assistant-fixed {
+    width: min(100%, var(--content-max)) !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+  }
+}
+
+/* =========================================================
+   7) UI Components
+   ========================================================= */
+/* 卡片樣式 */
 .home-grid-card {
   background: white;
   border-radius: 2.2rem;
@@ -199,52 +261,188 @@ body, input, button, select, textarea {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 1px solid #F3F4F6;
-  transition: all 0.2s;
-  cursor: pointer;
+  border: 1px solid #f3f4f6;
   aspect-ratio: 1 / 1;
+  cursor: pointer;
+  transition: all 0.2s;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.02);
 }
-.home-grid-card:active { transform: scale(0.95); }
-.home-grid-card i { font-size: 1.6rem; margin-bottom: 0.5rem; }
-.home-grid-card h4 { font-weight: 900; font-size: 0.8rem; color: #333; margin-bottom: 2px; }
-.home-grid-card p { font-weight: 900; font-size: 0.6rem; color: #D1D5DB; letter-spacing: 0.05em; }
+
+.home-grid-card h4 {
+  margin: 0 0 4px 0;
+  font-weight: 900;
+  font-size: 1rem;
+  color: #111827;
+}
+
+.home-grid-card p {
+  margin: 0;
+  font-weight: 800;
+  font-size: 0.75rem;
+  color: #6b7280;
+  letter-spacing: 0.08em;
+}
+
+/* 錄音波形 */
+.wave-bar {
+  width: 4px;
+  background: var(--brand-color);
+  border-radius: 10px;
+  height: 12px;
+}
+.recording-active .wave-bar {
+  animation: wave-animation 1.2s infinite;
+}
+@keyframes wave-animation {
+  0%,
+  100% {
+    height: 12px;
+  }
+  50% {
+    height: 40px;
+  }
+}
+
+/* 日期樣式 */
+.active-date {
+  background: white;
+  border: 2px solid var(--brand-color);
+  color: var(--brand-color);
+  width: 50px;
+  padding: 12px 10px;
+  border-radius: 18px;
+  text-align: center;
+  box-shadow: 0 4px 10px rgba(19, 181, 177, 0.1);
+}
+
+.deleted-date {
+  background: #f9fafb;
+  border: 2px solid #d1d5db;
+  color: #9ca3af;
+  width: 50px;
+  padding: 12px 10px;
+  border-radius: 18px;
+  text-align: center;
+}
 
 /* Modals */
-#ai-modal, #confirm-modal {
+#ai-modal,
+#confirm-modal {
   z-index: 100;
-  background: rgba(0, 0, 0, 0.5);
   display: none;
-  position: absolute;
+  position: fixed;
   inset: 0;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+#ai-modal > div,
+#confirm-modal > div {
+  width: min(720px, 100%);
 }
 
 /* Quiz */
 .quiz-option {
+  display: block;
   width: 100%;
   text-align: left;
-  padding: 1rem;
-  border-radius: 1rem;
-  border: 1px solid #F3F4F6;
-  background: white;
-  margin-bottom: 0.5rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-  transition: all 0.2s;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #f3f4f6;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+  transition:
+    transform 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease;
 }
-.quiz-option:active { transform: scale(0.98); }
-.quiz-correct { background-color: #dcfce7; border-color: #22c55e; color: #15803d; }
-.quiz-wrong { background-color: #fee2e2; border-color: #ef4444; color: #b91c1c; }
 
-/* Select dropdown arrow */
-select {
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23999' %3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.5rem center;
-  background-size: 0.6rem;
-  padding-right: 1.5rem !important;
+.quiz-option:active {
+  transform: scale(0.99);
+}
+
+.quiz-option:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.quiz-correct {
+  background: #dcfce7;
+  border-color: #22c55e;
+  color: #15803d;
+}
+
+.quiz-wrong {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #b91c1c;
+}
+
+/* 小工具 */
+.aspect-ratio-1 {
+  aspect-ratio: 1 / 1;
+}
+
+#settings-avatar-grid div:active {
+  transform: scale(0.9);
+}
+
+/* Sticky 篩選列（✅ safe-top + header height） */
+.list-bars-container {
+  position: sticky;
+  top: calc(var(--safe-top) + var(--app-header-h));
+  z-index: 45;
+}
+
+/* 文字截斷 */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* =========================================================
+   8) Unified Note Card Styles
+   ========================================================= */
+.card-visual-slot {
+  width: 48px;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.note-card-main {
+  width: 0;
+  flex: 1;
+  min-height: fit-content; /* ✨ 防止垂直拉伸 */
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 2.2rem;
+  padding: 20px;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+  display: flex; /* 改為 flex 佈局方便內部對齊 */
+  flex-direction: column;
+}
+
+.note-card-main:active {
+  transform: scale(0.98);
+}
+
+.card-intro-text {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 500;
+  line-height: 1.6;
+  margin-bottom: 12px;
+  font-style: normal !important;
 }
