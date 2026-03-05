@@ -22,3 +22,4 @@ index_old.html
 *old.html
 
 .vs
+.env*.local

@@ -17,6 +17,7 @@
 
   --content-pad: 24px;
 
+  /* 底部固定 CTA 區高度估算，用來給 scroll area 預留空間 */
   --cta-h: 88px;
 
   --safe-top: env(safe-area-inset-top, 0px);
@@ -122,7 +123,7 @@ body {
 
 .left-slot,
 .right-slot {
-  width: 84px;
+  width: 100px;
   min-width: 84px;
   display: flex;
   align-items: center;
@@ -155,15 +156,9 @@ body {
 .review-scroll,
 .settings-scroll,
 .page-trash > .flex-1 {
-  /* ✅ 只鎖定回收站「主要滾動容器」，避免誤傷卡片內的 flex-1 */
   flex: 1;
   overflow-y: auto;
   padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + var(--cta-h));
-}
-
-.review-scroll,
-.page-trash > .flex-1 {
-  padding-top: 0;
 }
 
 /* =========================================================
@@ -199,17 +194,55 @@ body {
   align-items: center;
 }
 
-.trash-cta button {
-  flex: 1;
-  height: 54px;
+/* =========================================================
+   5.1) Unified CTA Button System（底部大按鈕統一）
+   ========================================================= */
+.cta-btn {
+  width: 100%;
+  height: 56px;
   border-radius: 2.5rem;
   font-weight: 900;
   font-size: 14px;
-  transition: all 0.2s;
+  border: 0;
+  outline: none;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
+  transition:
+    transform 0.15s ease,
+    filter 0.2s ease,
+    opacity 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.cta-btn:active {
+  transform: scale(0.98);
+}
+
+.cta-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.cta-primary {
+  background: var(--brand-color);
+  color: white;
+  box-shadow: 0 18px 35px rgba(19, 181, 177, 0.18);
+}
+
+.cta-soft {
+  background: var(--brand-light);
+  color: var(--brand-color);
+  box-shadow: 0 10px 22px rgba(19, 181, 177, 0.1);
+}
+
+.cta-danger {
+  background: #ef4444;
+  color: white;
+  box-shadow: 0 18px 35px rgba(239, 68, 68, 0.18);
 }
 
 /* =========================================================
@@ -236,7 +269,7 @@ body {
     width: 100% !important;
   }
 
-  /* ✅ 固定定位元素：桌機置中（補上 trash-cta / assistant） */
+  /* 固定定位元素：桌機置中 */
   #main-nav,
   .home-cta,
   .review-cta,
@@ -253,7 +286,6 @@ body {
 /* =========================================================
    7) UI Components
    ========================================================= */
-/* 卡片樣式 */
 .home-grid-card {
   background: white;
   border-radius: 2.2rem;
@@ -283,7 +315,6 @@ body {
   letter-spacing: 0.08em;
 }
 
-/* 錄音波形 */
 .wave-bar {
   width: 4px;
   background: var(--brand-color);
@@ -303,7 +334,6 @@ body {
   }
 }
 
-/* 日期樣式 */
 .active-date {
   background: white;
   border: 2px solid var(--brand-color);
@@ -325,7 +355,6 @@ body {
   text-align: center;
 }
 
-/* Modals */
 #ai-modal,
 #confirm-modal {
   z-index: 100;
@@ -343,7 +372,6 @@ body {
   width: min(720px, 100%);
 }
 
-/* Quiz */
 .quiz-option {
   display: block;
   width: 100%;
@@ -384,7 +412,6 @@ body {
   color: #b91c1c;
 }
 
-/* 小工具 */
 .aspect-ratio-1 {
   aspect-ratio: 1 / 1;
 }
@@ -393,14 +420,13 @@ body {
   transform: scale(0.9);
 }
 
-/* Sticky 篩選列（✅ safe-top + header height） */
+/* Sticky 篩選列：safe-top + header height */
 .list-bars-container {
   position: sticky;
   top: calc(var(--safe-top) + var(--app-header-h));
   z-index: 45;
 }
 
-/* 文字截斷 */
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -423,14 +449,14 @@ body {
 .note-card-main {
   width: 0;
   flex: 1;
-  min-height: fit-content; /* ✨ 防止垂直拉伸 */
+  min-height: fit-content;
   background: white;
   border: 1px solid rgba(0, 0, 0, 0.05);
   border-radius: 2.2rem;
   padding: 20px;
   position: relative;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
-  display: flex; /* 改為 flex 佈局方便內部對齊 */
+  display: flex;
   flex-direction: column;
 }
 

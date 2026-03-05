@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <title>認知破壞終結者 ✨</title>
+    <title>認知破壞終結者3.0 ✨</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -31,14 +31,14 @@
       ========================================================== -->
       <div id="page-home" class="page page-home">
         <div class="home-scroll no-scrollbar">
-          <!-- ✅ Header 放在 scroll container 第一層，避免被內容 padding 影響 sticky 與置中 -->
+          <!-- Header（放在 scroll container 第一層，避免 sticky/置中被 padding 影響） -->
           <header class="app-header">
             <div class="header-content-wrapper">
               <div class="left-slot">
                 <p
                   class="text-[10px] text-gray-300 font-black tracking-widest uppercase"
                 >
-                  認知破壞終結者
+                  認知破壞終結者3.0
                 </p>
               </div>
               <div class="center-slot">
@@ -59,7 +59,7 @@
             </div>
           </header>
 
-          <!-- ✅ 內容區再單獨包 padding -->
+          <!-- 內容區 padding -->
           <div class="home-content px-6 pt-6">
             <div class="flex items-end gap-3 mb-10">
               <div class="relative flex-shrink-0">
@@ -152,12 +152,9 @@
           </div>
         </div>
 
-        <!-- ✅ 固定 CTA 外層不再額外加 px/pb，避免與 CSS fixed padding 疊加 -->
+        <!-- Bottom CTA（統一按鈕 class） -->
         <div class="home-cta">
-          <button
-            data-action="start-record"
-            class="w-full bg-[#13B5B1] text-white py-5 rounded-[2.5rem] font-black text-sm shadow-xl shadow-[#13B5B1]/20 flex items-center justify-center gap-3 active:scale-95 transition-all"
-          >
+          <button data-action="start-record" class="cta-btn cta-primary">
             <i class="fas fa-microphone-alt text-lg"></i> 開始新錄音
           </button>
         </div>
@@ -234,7 +231,6 @@
         </div>
 
         <div class="list-scroll no-scrollbar">
-          <!-- ✅ 移除 pb-40，底部預留交給 CSS（避免雙倍留白） -->
           <div class="px-6 pt-6">
             <div class="flex p-1 bg-gray-100 rounded-full mb-8">
               <button
@@ -352,7 +348,6 @@
         4) Content
       ========================================================== -->
       <div id="page-content" class="page hidden overflow-hidden">
-        <!-- ✅ Header 統一放 page 直下（不要包在額外 padding 容器裡） -->
         <header class="app-header">
           <div class="header-content-wrapper">
             <div class="left-slot">
@@ -412,7 +407,6 @@
           </div>
         </header>
 
-        <!-- 上方 tabs 區（保留你原本視覺） -->
         <div class="px-6 pt-4 pb-2 bg-white border-b border-gray-50">
           <div class="flex p-1 bg-gray-100 rounded-full mb-2">
             <button
@@ -605,7 +599,6 @@
         </div>
 
         <div class="flex-1 overflow-y-auto no-scrollbar">
-          <!-- ✅ 移除 pb-40，底部預留交給 CSS（避免雙倍留白） -->
           <div class="p-6">
             <div id="trash-container" class="flex flex-col gap-3"></div>
 
@@ -624,7 +617,7 @@
             id="btn-batch-restore"
             type="button"
             data-action="trash-batch-restore"
-            class="bg-[#F0F9F9] text-[#13B5B1] shadow-sm disabled:opacity-50"
+            class="cta-btn cta-soft"
           >
             <i class="fas fa-undo-alt"></i> 批量還原
           </button>
@@ -632,7 +625,7 @@
             id="btn-batch-delete"
             type="button"
             data-action="trash-batch-delete"
-            class="bg-red-500 text-white shadow-xl shadow-red-200 disabled:opacity-50"
+            class="cta-btn cta-danger"
           >
             <i class="fas fa-trash-alt"></i> 永久刪除
           </button>
@@ -722,7 +715,6 @@
         </div>
 
         <div class="review-scroll flex-1 overflow-y-auto no-scrollbar">
-          <!-- ✅ 移除 pb-40，底部預留交給 CSS（避免雙倍留白） -->
           <div class="px-6 pt-6">
             <div class="flex justify-between items-center mb-4">
               <p
@@ -741,7 +733,7 @@
             id="btn-start-review"
             type="button"
             data-action="run-smart-quiz"
-            class="w-full bg-[#13B5B1] text-white py-5 rounded-[2.5rem] font-black text-sm shadow-xl shadow-[#13B5B1]/20 flex items-center justify-center gap-3 active:scale-95 transition-all"
+            class="cta-btn cta-primary"
           >
             <i class="fas fa-bolt"></i> 開始挑戰
           </button>
@@ -755,7 +747,6 @@
         id="page-settings"
         class="page hidden page-settings overflow-hidden bg-[#F8FAFA]"
       >
-        <!-- ✅ 補回 header-content-wrapper，讓桌機置中與左右 slot 一致 -->
         <header class="app-header shadow-sm">
           <div class="header-content-wrapper">
             <div class="left-slot">
@@ -774,7 +765,6 @@
         </header>
 
         <div class="settings-scroll no-scrollbar">
-          <!-- ✅ 移除 pb-40，底部預留交給 CSS（避免雙倍留白） -->
           <div class="px-6 pt-6">
             <section class="mb-8">
               <p
@@ -857,12 +847,8 @@
           </div>
         </div>
 
-        <!-- ✅ 固定 CTA 外層不再額外加 px/pb，避免與 CSS fixed padding 疊加 -->
         <div class="settings-cta">
-          <button
-            data-action="save-settings"
-            class="w-full bg-[#13B5B1] text-white py-5 rounded-[2.5rem] font-black text-sm shadow-xl shadow-[#13B5B1]/20 active:scale-95 transition-all"
-          >
+          <button data-action="save-settings" class="cta-btn cta-primary">
             儲存個人化設定
           </button>
         </div>
@@ -891,7 +877,6 @@
 
       <!-- =========================================================
         Main Navigation
-        ✅ 移除固定定位/左右錨定/pb-10，交給 style.css 的 #main-nav 統一管理
       ========================================================== -->
       <div
         id="main-nav"
