@@ -1,13 +1,24 @@
+# �ӷP��T
 .env
+.env.local
 
+# Vercel ����
+.vercel
+
+# �̿�Ҳ�
 node_modules/
 
+# �sĶ����
 dist/
+build/
 
+# �t�μȦs��
 .DS_Store
 Thumbs.db
 
+# ���ɮשδ�����
 test.txt
 index_old.html
+*old.html
 
 .vs

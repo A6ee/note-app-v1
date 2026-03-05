@@ -8,6 +8,9 @@ let currentFilterCategory = "全部";
 let currentFilter = "all";
 let currentFilterDate = null;
 
+// env 
+// 改到api/gemini.js中串接api key
+//const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
 let selectedTrashNotes = new Set();
 let selectedReviewNotes = new Set();
 
@@ -402,7 +405,7 @@ async function stopRecording() {
     window.loadNoteDetails(newNote.id);
     localStorage.removeItem("temp_transcript");
   } catch (err) {
-    console.error(err);
+    console.error("處理失敗:", err);
     alert("生成失敗，但逐字稿已為您暫存。");
     window.navigateTo("page-list");
   }
@@ -414,35 +417,23 @@ async function stopRecording() {
  * =========================================================
  */
 
+// 改為呼叫中間層api/gemini.js
 async function callGemini(prompt, responseSchema = null, retryCount = 0) {
-  if (!apiKey) {
-    throw new Error("Missing VITE_GEMINI_API_KEY");
-  }
-
-  const model = "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: responseSchema
-      ? { responseMimeType: "application/json", responseSchema }
-      : {},
-  };
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+  try{
+    const response = await fetch('/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            prompt: prompt, 
+            schema: responseSchema 
+        })
     });
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      console.error("Gemini API Error:", res.status, errText);
-      throw new Error("Gemini API Error");
-    }
-
-    return await res.json();
-  } catch (err) {
+    if (!response.ok) throw new Error('middle return Failed');
+    return await response.json();
+  }
+  catch(err)
+  {
     if (retryCount < 5) {
       const base = Math.pow(2, retryCount) * 1000;
       const jitter = base * (0.7 + Math.random() * 0.6);
