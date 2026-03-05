@@ -8,9 +8,9 @@ let currentFilterCategory = "全部";
 let currentFilter = "all";
 let currentFilterDate = null;
 
-// env 
+// env
 // 改到api/gemini.js中串接api key
-//const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
+//const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 let selectedTrashNotes = new Set();
 let selectedReviewNotes = new Set();
 
@@ -419,21 +419,19 @@ async function stopRecording() {
 
 // 改為呼叫中間層api/gemini.js
 async function callGemini(prompt, responseSchema = null, retryCount = 0) {
-  try{
-    const response = await fetch('/api/gemini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            prompt: prompt, 
-            schema: responseSchema 
-        })
+  try {
+    const response = await fetch("/api/gemini", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: prompt,
+        schema: responseSchema,
+      }),
     });
 
-    if (!response.ok) throw new Error('middle return Failed');
+    if (!response.ok) throw new Error("middle return Failed");
     return await response.json();
-  }
-  catch(err)
-  {
+  } catch (err) {
     if (retryCount < 5) {
       const base = Math.pow(2, retryCount) * 1000;
       const jitter = base * (0.7 + Math.random() * 0.6);
@@ -1305,7 +1303,11 @@ Object.assign(window, {
     const currentActivePage = document.querySelector(".page:not(.hidden)");
 
     if (currentActivePage && pageId === "page-content") {
-      lastActivePageId = currentActivePage.id;
+      const from = currentActivePage.id;
+
+      if (from !== "page-loading" && from !== "page-record") {
+        lastActivePageId = from;
+      }
     }
 
     pages.forEach((p) => p.classList.add("hidden"));
