@@ -3,6 +3,8 @@
  * 0) Config & State（設定與狀態）
  * =========================================================
  */
+import { registerSW } from "virtual:pwa-register";
+registerSW({ immediate: true });
 
 let currentFilterCategory = "全部";
 let currentFilter = "all";
