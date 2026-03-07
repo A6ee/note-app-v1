@@ -9,6 +9,7 @@ registerSW({ immediate: true });
 let currentFilterCategory = "全部";
 let currentFilter = "all";
 let currentFilterDate = null;
+let activeListTab = "note";
 
 // env
 // 改到api/gemini.js中串接api key
@@ -29,6 +30,16 @@ let recognitionRestartTimer = null;
 let recognitionEndFailCount = 0;
 let lastInterim = "";
 
+let quizHistory =
+  JSON.parse(localStorage.getItem("president_quiz_history")) || [];
+
+function saveQuizRecord(record) {
+  quizHistory.push({
+    ...record,
+    timestamp: Date.now(),
+  });
+  localStorage.setItem("president_quiz_history", JSON.stringify(quizHistory));
+}
 /**
  * Notes / Settings
  */
@@ -1050,7 +1061,17 @@ function permanentClearAll() {
  */
 function checkAnswer(btn, selected, correct) {
   const allBtns = btn.parentElement.querySelectorAll("button");
-  if (selected === correct) {
+  const isCorrect = selected === correct;
+
+  // 記錄數據
+  saveQuizRecord({
+    noteId: currentNoteData?.id || "smart-review",
+    category: currentNoteData?.category || "綜合複習",
+    type: selectedQuizType, // 使用我們全域變數存的題型
+    isCorrect: isCorrect,
+  });
+
+  if (isCorrect) {
     btn.classList.add("quiz-correct");
     btn.innerHTML += " ✅";
   } else {
@@ -1060,30 +1081,194 @@ function checkAnswer(btn, selected, correct) {
   allBtns.forEach((b) => (b.disabled = true));
 }
 
-async function generateQuiz() {
-  if (!currentNoteData) return;
+// 修改 main.js 中的 openQuizSettings
 
-  showModal("✨ 皮皮正在為您精選考題...");
+// --- 整合後的測驗設定邏輯 ---
 
-  const prompt = `你是一位專業教授。請根據以下筆記內容出 3 題單選題。
-請嚴格遵守以下格式，只回傳純 JSON 字串，不要包含 \`\`\`json 等標籤：
-{"questions": [{"question": "題目", "options": ["選項1","選項2","選項3","選項4"], "answer": 0}]}
-注意：answer 是正確選項的索引(0-3)。
-內容：${JSON.stringify(currentNoteData)}`;
+let selectedQuizCount = 3;
+let selectedQuizType = "mc";
+
+/**
+ * 開啟測驗自定義設定選單
+ * @param {boolean} isReviewMode - 是否為智能複習模式
+ */
+function openQuizSettings(isReviewMode = false) {
+  const modal = safeEl("ai-modal");
+  const content = safeEl("modal-content");
+  if (!modal || !content) return;
+
+  // 如果是複習模式，檢查是否有選取筆記
+  if (isReviewMode && selectedReviewNotes.size === 0) {
+    alert("總裁，請先挑選至少一份筆記再開始挑戰喔！✨");
+    return;
+  }
+
+  content.innerHTML = `
+    <h3 class="text-lg font-black mb-6 text-gray-800 flex items-center gap-2">
+      <i class="fas fa-sliders-h text-[#13B5B1]"></i> ${isReviewMode ? "智能複習自定義" : "測驗自定義設定"}
+    </h3>
+    
+    <div class="space-y-6">
+      <div>
+        <p class="text-[10px] text-gray-300 font-black uppercase tracking-widest mb-3 ml-1">設定題數</p>
+        <div class="flex gap-2">
+          ${[3, 5, 10]
+            .map(
+              (n) => `
+            <button type="button" data-quiz-count="${n}" 
+              class="quiz-setting-btn flex-1 py-3 rounded-2xl border-2 font-black text-xs transition-all
+              ${n === 3 ? "border-[#13B5B1] bg-[#F0F9F9] text-[#13B5B1]" : "border-gray-50 bg-gray-50 text-gray-400"}">
+              ${n} 題
+            </button>
+          `,
+            )
+            .join("")}
+        </div>
+      </div>
+
+      <div>
+        <p class="text-[10px] text-gray-300 font-black uppercase tracking-widest mb-3 ml-1">切換題型</p>
+        <div class="flex flex-col gap-2">
+          ${[
+            { id: "mc", label: "選擇題" },
+            { id: "tf", label: "是非題" },
+            { id: "fib", label: "短答填空題" },
+          ]
+            .map(
+              (t, idx) => `
+            <button type="button" data-quiz-type="${t.id}" 
+              class="quiz-type-btn w-full py-3 px-4 rounded-2xl border-2 font-black text-xs text-left transition-all
+              ${idx === 0 ? "border-[#13B5B1] bg-[#F0F9F9] text-[#13B5B1]" : "border-gray-50 bg-gray-50 text-gray-400"}">
+              ${t.label}
+            </button>
+          `,
+            )
+            .join("")}
+        </div>
+      </div>
+
+      <button id="start-custom-quiz" class="cta-btn cta-primary mt-4">
+        確認並開始挑戰
+      </button>
+    </div>
+  `;
+
+  modal.style.display = "flex";
+  bindQuizSettingsEvents(isReviewMode); // 傳遞模式給事件綁定
+}
+
+function bindQuizSettingsEvents(isReviewMode) {
+  // 重置預設值
+  selectedQuizCount = 3;
+  selectedQuizType = "mc";
+
+  // 處理題數切換邏輯
+  document.querySelectorAll("[data-quiz-count]").forEach((btn) => {
+    btn.onclick = () => {
+      selectedQuizCount = parseInt(btn.dataset.quizCount);
+      document.querySelectorAll("[data-quiz-count]").forEach((b) => {
+        b.className =
+          "quiz-setting-btn flex-1 py-3 rounded-2xl border-2 font-black text-xs transition-all border-gray-50 bg-gray-50 text-gray-400";
+      });
+      btn.className =
+        "quiz-setting-btn flex-1 py-3 rounded-2xl border-2 font-black text-xs transition-all border-[#13B5B1] bg-[#F0F9F9] text-[#13B5B1]";
+    };
+  });
+
+  // 處理題型切換邏輯
+  document.querySelectorAll("[data-quiz-type]").forEach((btn) => {
+    btn.onclick = () => {
+      selectedQuizType = btn.dataset.quizType;
+      document.querySelectorAll("[data-quiz-type]").forEach((b) => {
+        b.className =
+          "quiz-type-btn w-full py-3 px-4 rounded-2xl border-2 font-black text-xs text-left transition-all border-gray-50 bg-gray-50 text-gray-400";
+      });
+      btn.className =
+        "quiz-type-btn w-full py-3 px-4 rounded-2xl border-2 font-black text-xs text-left transition-all border-[#13B5B1] bg-[#F0F9F9] text-[#13B5B1]";
+    };
+  });
+
+  // 點擊確認按鈕，帶入正確的參數呼叫 API
+  safeEl("start-custom-quiz").onclick = () => {
+    generateCustomQuiz(selectedQuizCount, selectedQuizType, isReviewMode);
+  };
+}
+
+/**
+ * 核心出題函數：支援自定義題數、題型，以及單篇/多篇筆記模式
+ * @param {number} count - 題數 (3, 5, 10)
+ * @param {string} type - 題型 ('mc': 單選, 'tf': 是非, 'fib': 填空)
+ * @param {boolean} isReviewMode - 是否為智能複習模式 (多選筆記)
+ */
+async function generateCustomQuiz(count, type, isReviewMode = false) {
+  let contentData = "";
+  let loadingMsg = "";
+
+  // 1. 決定資料來源
+  if (isReviewMode) {
+    // 智能複習模式：整合所有選取的筆記內容
+    const notesToReview = notesLibrary.filter((n) =>
+      selectedReviewNotes.has(n.id),
+    );
+    if (notesToReview.length === 0) {
+      alert("請先選取筆記再開始挑戰喔！✨");
+      return;
+    }
+    contentData = notesToReview
+      .map(
+        (n) =>
+          `標題: ${n.title}\n內容摘要: ${n.intro}\n詳細重點: ${JSON.stringify(n.sections)}`,
+      )
+      .join("\n\n---\n\n");
+    loadingMsg = `✨ 皮皮正在整合 ${notesToReview.length} 份筆記，產出 ${count} 題跨領域挑戰...`;
+  } else {
+    // 單篇筆記模式
+    if (!currentNoteData) return;
+    contentData = `標題: ${currentNoteData.title}\n內容: ${JSON.stringify(currentNoteData.sections)}`;
+    loadingMsg = `✨ 皮皮正在針對本篇筆記，精選 ${count} 題考題...`;
+  }
+
+  showModal(loadingMsg);
+
+  // 2. 根據題型設定 AI 指令
+  let typeInstruction = "";
+  if (type === "mc") {
+    typeInstruction =
+      "4個選項的單選題。請提供 options 陣列，answer 為正確選項的索引 (0-3)。";
+  } else if (type === "tf") {
+    typeInstruction =
+      "是非題。options 必須固定為 ['O', 'X']，answer 為正確答案的索引 (0代表O，1代表X)。";
+  } else if (type === "fib") {
+    typeInstruction =
+      "填空挑戰題。題目中請用 ___ 表示填空處。不要提供 options 陣列 (留空 [])，answer 必須直接填入該填空的正確繁體中文字串。";
+  }
+
+  // 3. 建立 Prompt 與 Schema
+  const prompt = `你是一位專業教授「認知破壞終結者」。請根據以下提供的學習內容，出一份高品質的測驗。
+題數：${count} 題
+題型要求：${typeInstruction}
+
+請嚴格遵守 JSON 格式回傳，不要包含 \`\`\`json 等標籤：
+{"questions": [{"question": "題目內容", "options": ["選項1","選項2"...], "answer": "索引或字串"}]}
+
+學習內容如下：
+${contentData}`;
 
   const schema = {
     type: "OBJECT",
     properties: {
       questions: {
         type: "ARRAY",
+        minItems: count,
+        maxItems: count,
         items: {
           type: "OBJECT",
           properties: {
             question: { type: "STRING" },
-            options: { type: "ARRAY", items: { type: "STRING" }, minItems: 4 },
-            answer: { type: "NUMBER" },
+            options: { type: "ARRAY", items: { type: "STRING" } },
+            answer: { type: "STRING" }, // 統一用字串接收，後面再轉型判定
           },
-          required: ["question", "options", "answer"],
+          required: ["question", "answer"],
         },
       },
     },
@@ -1091,6 +1276,7 @@ async function generateQuiz() {
   };
 
   try {
+    // 4. 呼叫 Gemini API
     const data = await callGemini(prompt, schema);
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     const cleanJson = String(rawText)
@@ -1099,40 +1285,59 @@ async function generateQuiz() {
       .trim();
     const result = JSON.parse(cleanJson);
 
-    let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 皮皮的小考時間</h3>`;
-    result.questions.forEach((q, qIdx) => {
-      html += `
-        <div class="mb-8 border-b border-gray-50 pb-6">
-          <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${q.question}</p>
-          <div class="space-y-2">
-            ${q.options
-              .map(
-                (opt, oIdx) => `
-                  <button type="button"
-                    class="quiz-option"
-                    data-action="quiz-answer"
-                    data-selected="${oIdx}"
-                    data-correct="${q.answer}"
-                  >${opt}</button>
-                `,
-              )
-              .join("")}
-          </div>
-        </div>
-      `;
-    });
-
-    safeEl("modal-content").innerHTML = html;
+    // 5. 呼叫渲染函數顯示結果 (這個函數我們接下來會實作)
+    renderQuizUI(result, type, count);
   } catch (err) {
-    console.error("解析失敗：", err);
+    console.error("出題失敗：", err);
     safeEl("modal-content").innerHTML = `
       <div class="text-center py-10">
         <i class="fas fa-exclamation-triangle text-orange-400 text-3xl mb-4"></i>
-        <p class="text-sm font-bold text-gray-500">出題稍有延誤，請再試一次。</p>
-        <button type="button" data-action="quiz" class="mt-4 text-xs text-[#13B5B1] font-black underline">重新出題</button>
+        <p class="text-sm font-black text-gray-500">哎呀！皮皮斷線了，請再試一次。</p>
+        <button type="button" onclick="closeModal()" class="mt-4 text-xs text-[#13B5B1] font-black underline">關閉視窗</button>
       </div>
     `;
   }
+}
+
+// 新增渲染函數
+function renderQuizUI(result, type, count) {
+  let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 認知挑戰：${type === "fib" ? "填空測驗" : "智能小考"}</h3>`;
+
+  result.questions.forEach((q, qIdx) => {
+    html += `
+      <div class="mb-8 border-b border-gray-50 pb-6">
+        <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${q.question}</p>
+        <div class="space-y-3">`;
+
+    if (type === "fib") {
+      // 填空題渲染：輸入框 + 確認按鈕
+      html += `
+        <div class="flex gap-2">
+          <input type="text" id="fib-input-${qIdx}" placeholder="請輸入答案..."
+            class="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-[#13B5B1]">
+          <button type="button" data-action="check-fib" data-idx="${qIdx}" data-answer="${q.answer}"
+            class="px-4 bg-[#13B5B1] text-white rounded-xl text-xs font-black shadow-md active:scale-95 transition-all">
+            檢查
+          </button>
+        </div>
+        <div id="fib-feedback-${qIdx}" class="hidden mt-2 text-[10px] font-black"></div>
+      `;
+    } else {
+      // 單選/是非題渲染：原本的按鈕模式
+      html += (q.options || [])
+        .map(
+          (opt, oIdx) => `
+        <button type="button" class="quiz-option" data-action="quiz-answer"
+          data-selected="${oIdx}" data-correct="${q.answer}">${opt}</button>
+      `,
+        )
+        .join("");
+    }
+
+    html += `</div></div>`;
+  });
+
+  safeEl("modal-content").innerHTML = html;
 }
 
 async function expandContent() {
@@ -1270,7 +1475,62 @@ async function startSmartReviewQuiz() {
       `<div class="text-center py-10"><p class="text-xs font-bold text-gray-400">連線失敗，請確認網路或 API Key。</p></div>`;
   }
 }
+function renderLearningDashboard() {
+  const container = safeEl("learning-dashboard");
+  if (!container) return;
 
+  if (quizHistory.length === 0) {
+    container.innerHTML = `<p class="text-xs text-gray-400 text-center py-4 font-bold">目前尚無測驗數據，開始挑戰吧！✨</p>`;
+    return;
+  }
+
+  const total = quizHistory.length;
+  const correct = quizHistory.filter((h) => h.isCorrect).length;
+  const accuracy = Math.round((correct / total) * 100);
+
+  // 弱點分析：計算各分類正確率
+  const categories = [...new Set(quizHistory.map((h) => h.category))];
+  const catStats = categories
+    .map((cat) => {
+      const trials = quizHistory.filter((h) => h.category === cat);
+      const score = Math.round(
+        (trials.filter((h) => h.isCorrect).length / trials.length) * 100,
+      );
+      return { name: cat, score };
+    })
+    .sort((a, b) => a.score - b.score); // 由低到高排，顯示弱點
+
+  container.innerHTML = `
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h4 class="text-2xl font-black text-[#13B5B1]">${accuracy}%</h4>
+        <p class="text-[9px] text-gray-400 font-black">總體正確率</p>
+      </div>
+      <div class="text-right">
+        <h4 class="text-sm font-black text-gray-800">${total}</h4>
+        <p class="text-[9px] text-gray-400 font-black">累計答題數</p>
+      </div>
+    </div>
+    
+    <div class="space-y-4">
+      <p class="text-[10px] text-gray-400 font-black uppercase border-b border-gray-50 pb-2">弱點分析 (正確率最低)</p>
+      ${catStats
+        .slice(0, 3)
+        .map(
+          (cat) => `
+        <div class="flex items-center gap-3">
+          <div class="text-[10px] font-black text-gray-600 w-16 truncate">${cat.name}</div>
+          <div class="flex-1 h-2 bg-gray-50 rounded-full overflow-hidden">
+            <div class="h-full bg-orange-400" style="width: ${cat.score}%"></div>
+          </div>
+          <div class="text-[9px] font-black text-orange-500">${cat.score}%</div>
+        </div>
+      `,
+        )
+        .join("")}
+    </div>
+  `;
+}
 /**
  * =========================================================
  * 7) Navigation / Global bindings
@@ -1289,6 +1549,7 @@ function rerenderForPage(pageId) {
     renderReviewSelection();
   } else if (pageId === "page-settings") {
     loadSettingsToUI();
+    renderLearningDashboard();
   }
 }
 
@@ -1347,6 +1608,26 @@ Object.assign(window, {
     if (!note) return;
     currentNoteData = note;
     renderNoteUI(note);
+
+    // 🚀 新增：根據列表頁的選取狀態，決定內容頁要顯示哪一個 View
+    const isTranscript = activeListTab === "transcript";
+
+    // 1. 切換顯示區塊 (使用 hidden 控制)
+    safeEl("view-note")?.classList.toggle("hidden", isTranscript);
+    safeEl("view-transcript")?.classList.toggle("hidden", !isTranscript);
+
+    // 2. 同步更新內容頁上方的 Tab 按鈕樣式，確保視覺統一
+    const activeClass =
+      "tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-xs font-black shadow-md";
+    const inactiveClass =
+      "tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-xs font-black";
+
+    safeEl("tab-note").className = !isTranscript ? activeClass : inactiveClass;
+    safeEl("tab-transcript").className = isTranscript
+      ? activeClass
+      : inactiveClass;
+
+    // 3. 執行導覽跳轉
     window.navigateTo("page-content");
   },
 
@@ -1405,12 +1686,15 @@ Object.assign(window, {
 
     if (el.dataset.listView) {
       const isNote = el.dataset.listView === "note";
+      activeListTab = el.dataset.listView; // 👈 關鍵：記住現在是哪個 Tab
+
+      // 原本的 UI 切換邏輯
       safeEl("list-tab-note").className = isNote
-        ? "tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-xs font-black shadow-md"
-        : "tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-xs font-black";
+        ? "tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-[10px] font-black shadow-md"
+        : "tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-[10px] font-black";
       safeEl("list-tab-transcript").className = !isNote
-        ? "tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-xs font-black shadow-md"
-        : "tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-xs font-black";
+        ? "tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-[10px] font-black shadow-md"
+        : "tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-[10px] font-black";
       return;
     }
 
@@ -1583,7 +1867,7 @@ Object.assign(window, {
         break;
 
       case "run-smart-quiz":
-        call(startSmartReviewQuiz);
+        call(() => openQuizSettings(true));
         break;
 
       case "open-note":
@@ -1592,13 +1876,63 @@ Object.assign(window, {
         break;
 
       case "quiz":
-        call(generateQuiz);
+        call(openQuizSettings);
         break;
 
       case "quiz-answer": {
         const selected = Number(el.dataset.selected);
         const correct = Number(el.dataset.correct);
         checkAnswer(el, selected, correct);
+        break;
+      }
+      // 在 main.js 的事件委派中加入
+      case "check-fib": {
+        const idx = el.dataset.idx;
+        const correctAnswer = el.dataset.answer;
+        const inputEl = safeEl(`fib-input-${idx}`);
+        const feedbackEl = safeEl(`fib-feedback-${idx}`);
+        const userInput = inputEl.value.trim().toLowerCase();
+        const target = correctAnswer.trim().toLowerCase();
+
+        // 停用輸入與按鈕
+        inputEl.disabled = true;
+        el.disabled = true;
+        el.style.opacity = "0.5";
+
+        if (userInput === target) {
+          // 答對邏輯
+          inputEl.classList.add("border-green-500", "bg-green-50");
+          feedbackEl.innerHTML = `<span class="text-green-600">✅ 太棒了！答案完全正確。</span>`;
+          feedbackEl.classList.remove("hidden");
+          // TODO: recordSuccess() -> 之後連動學習看板
+        } else {
+          // 答錯邏輯
+          inputEl.classList.add("border-red-500", "bg-red-50");
+          feedbackEl.innerHTML = `<span class="text-red-600">❌ 可惜了，正確答案是：${correctAnswer}</span>`;
+          feedbackEl.classList.remove("hidden");
+          // TODO: recordFailure() -> 之後連動錯題集
+        }
+        saveQuizRecord({
+          noteId: currentNoteData?.id || "smart-review",
+          category: currentNoteData?.category || "綜合複習",
+          type: "fib",
+          isCorrect: isCorrect,
+        });
+        break;
+      } // main.js 的事件處理區塊
+      case "clear-quiz-history": {
+        if (confirm("確定要將所有測驗紀錄歸零嗎？這不會刪除您的筆記喔！✨")) {
+          // 1. 清空記憶體中的陣列
+          quizHistory = [];
+
+          // 2. 移除 LocalStorage 裡的紀錄
+          localStorage.removeItem("president_quiz_history");
+
+          // 3. 立即重新渲染看板
+          renderLearningDashboard();
+
+          alert("數據已全數歸零，準備好重新挑戰了嗎？🚀");
+        }
         break;
       }
 
