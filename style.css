@@ -68,9 +68,30 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--bg-page);
-  transition: opacity 0.3s ease;
+
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+.page.active {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
+.cta-btn:active,
+.home-grid-card:active,
+.quiz-option:active {
+  transform: scale(0.96) !important;
+}
+
+.nav-item-active {
+  transform: scale(1.1);
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
 /* =========================================================
    2) Bottom Navigation
    ========================================================= */

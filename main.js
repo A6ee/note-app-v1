@@ -10,7 +10,7 @@ let currentFilterCategory = "全部";
 let currentFilter = "all";
 let currentFilterDate = null;
 let activeListTab = "note";
-
+let currentSessionScore = { correct: 0, total: 0 };
 // env
 // 改到api/gemini.js中串接api key
 //const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -45,71 +45,283 @@ function saveQuizRecord(record) {
  */
 let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
   {
-    id: "note-2-1",
-    title: "2.1 腦部睡眠中樞的研究與定位",
+    id: "note-long-1",
+    title: "馬斯洛需求層次：人類動機的核心",
     intro:
-      "皮皮已經為您整理好了關於睡眠中樞定位的關鍵實驗。這堂課介紹了 Jouvet 如何透過腦幹切斷術找出 REM 睡眠的核心區域。",
-    date: "12 / 26",
-    duration: "05:40",
-    category: "未分類",
+      "本課深入探討人本主義心理學家 Maslow 的理論。從生理基礎到自我實現，解析不同階層需求如何驅動人類行為與學習動力。",
+    date: "3 / 1",
+    duration: "12:45",
+    category: "心理學",
     sections: [
       {
-        category: "核心概念",
+        category: "需求金字塔 (由下而上)",
         items: [
-          "睡眠並非單一開關，而是由**睡眠中樞**與**清醒中樞**並存且交互影響決定狀態。",
+          "**缺失需求**：包含生理(食衣住行)、安全(穩定環境)與社交(愛與歸屬)。",
+          "**成長需求**：自尊(成就感與尊重)以及最高的**自我實現**。",
+          "關鍵邏輯：低層次需求若未滿足，個體難以產生追求高層次需求的動力。",
         ],
       },
       {
-        category: "Jouvet 研究 (1959-1962)",
+        category: "教育應用策略",
         items: [
-          "對象：鼠、貓。",
-          "方法：**腦幹切斷術**。觀察切斷後大腦前後段的睡眠現象來推斷位置。",
-        ],
-      },
-      {
-        category: "核心結論",
-        items: [
-          "REM 睡眠的主要中樞確定位於**腦幹橋腦 (Pons)**。",
-          "橋腦向上活化大腦皮質，向下抑制動作輸出，形成「大腦活化 x 身體抑制」。",
+          "確保學生在課堂感到安全與被接納，是開啟學習動機的前提。",
+          "透過適度的讚賞與挑戰，滿足學生的自尊需求，進而引發主動學習。",
         ],
       },
     ],
     segments: [
       {
         time: "00:00",
-        text: "所以似乎我們的大腦當中，原來在思考的，如果我睡覺好像是有一個開關把它關掉，好像並不是這樣子的。",
+        text: "各位同學，今天我們要聊聊為什麼我們會想做某些事情？動機到底是什麼？",
       },
       {
-        time: "00:15",
-        text: "我們大腦裡面好像有它睡的中樞跟醒的中樞，睡跟醒的中樞它們可能會交互影響，來影響我們的睡眠的狀態。",
+        time: "01:15",
+        text: "Abraham Maslow 提出了一個非常經典的金字塔模型。最底層是生理需求，像是肚子餓了你絕對沒辦法專心聽課。",
       },
       {
-        time: "00:30",
-        text: "後來大概比較多的一些技術開始發展出來，能夠對於腦部的活動有多一些瞭解。腦波能夠分辨不同睡眠的階段。",
+        time: "02:30",
+        text: "接著是安全感，如果你在學校一直被排擠、覺得不安全，你的大腦會處於防衛狀態，這就是社交需求的缺失。",
       },
       {
-        time: "01:30",
-        text: "在大概 1959 年到 62 年，有一位法國的學者 Jouvet，他開始透過更進一步、更侵入的腦幹切斷術技術。",
+        time: "04:00",
+        text: "當這些都滿足了，我們才會開始追求『自尊』，希望被老師肯定、被同學敬佩。",
       },
       {
-        time: "02:15",
-        text: "他透過切斷我們大腦的不同部位，來找尋睡眠中樞在哪。邏輯是觀測後半部是否仍有睡眠現象來推斷位置。",
+        time: "05:45",
+        text: "最後的巔峰是『自我實現』，也就是發揮你的天賦，單純為了成長而學習。",
       },
       {
-        time: "03:00",
-        text: "若切斷在中腦跟橋腦界限（A跟B），發現會出現週期性的快速眼動跟肌肉張力降低，表示周邊機轉仍作用。",
+        time: "07:20",
+        text: "在教育環境中，如果一個孩子早餐沒吃、家裡氣氛緊張，我們逼他追求學術成就（自我實現）是非常困難的。",
       },
       {
-        time: "03:45",
-        text: "若在橋腦跟延腦交界（C）切斷，身體看不到 REM 活動，但腦波與 PGO 銳波顯示大腦內部仍有 REM。",
+        time: "09:00",
+        text: "所以皮皮建議，教學者要先建立溫暖的環境，這就是滿足基礎需求的過程。",
       },
       {
-        time: "04:30",
-        text: "這顯示在 C 點切斷時中樞 REM 存在但周邊輸出被阻斷。由此推論 A B C 之間這段橋腦就是最重要的 REM 睡眠中樞。",
+        time: "11:30",
+        text: "總結來說，層次結構並非絕對，但它提供了一個理解人類行為的極佳藍圖。",
+      },
+    ],
+    isFavorite: true,
+    isDeleted: false,
+  },
+  {
+    id: "note-long-2",
+    title: "皮亞傑：兒童認知發展階段論",
+    intro:
+      "解析 Jean Piaget 如何觀察兒童建構世界觀。逐字稿中詳細描述了從感覺動作期到形式操作期的質變過程。",
+    date: "3 / 2",
+    duration: "15:20",
+    category: "教育學",
+    sections: [
+      {
+        category: "四大發展階段",
+        items: [
+          "**感覺動作期 (0-2歲)**：發展出『物體恆存』概念，了解東西不見不代表消失。",
+          "**前運思期 (2-7歲)**：以自我為中心，具備符號功能，但缺乏守恆概念。",
+          "**具體運思期 (7-11歲)**：具備邏輯推理，但需依靠具體事物操作。",
+          "**形式運思期 (11歲+)**：發展出抽象思維與假設檢定能力。",
+        ],
+      },
+    ],
+    segments: [
+      {
+        time: "00:00",
+        text: "今天我們要來談兒童心理學的泰斗：皮亞傑。他認為小孩不是『縮小版的大人』，他們看世界的方式跟我們完全不同。",
+      },
+      {
+        time: "01:50",
+        text: "兩歲以前的孩子是在『感覺動作期』。你會發現跟他們玩躲貓貓，只要遮住臉，他們就以為你消失了。",
+      },
+      {
+        time: "03:40",
+        text: "等到了幼兒園時期，他們進入『前運思期』。這時候他們很愛問為什麼，但想法通常很自我中心。",
       },
       {
         time: "05:15",
-        text: "發現睡眠中樞的確是在腦幹橋腦。它會往上活化大腦部分，往下去抑制動作輸出，形成大腦活化但身體被抑制的狀態。",
+        text: "你有沒有試過把同樣多的水倒進窄長跟寬扁的杯子？這時期的孩子會覺得長杯子的水比較多，因為他們還沒發展出『守恆』。",
+      },
+      {
+        time: "07:30",
+        text: "上了小學後，邏輯開始出現了，這是『具體運思期』。但如果你問他們太抽象的問題，他們會當機。",
+      },
+      {
+        time: "09:45",
+        text: "到了青少年時期，也就是『形式運思期』，他們終於能思考正義、真理這種看不見的東西。",
+      },
+      {
+        time: "12:00",
+        text: "所以老師在備課時，一定要根據學生目前的認知階段來設計教具，不要越級打怪。",
+      },
+    ],
+    isFavorite: false,
+    isDeleted: false,
+  },
+  {
+    id: "note-long-3",
+    title: "行為修正：斯金納的增強理論",
+    intro:
+      "探討操作制約如何透過後果改變行為。內容涵蓋正負增強、懲罰，以及在教室管理中的實務應用方案。",
+    date: "3 / 3",
+    duration: "10:10",
+    category: "心理學",
+    sections: [
+      {
+        category: "核心行為法則",
+        items: [
+          "**正增強**：給予喜愛的事物(獎勵)以增加行為頻率。",
+          "**負增強**：移走厭惡的事物(如減免作業)以增加行為頻率。",
+          "**懲罰**：給予痛苦或剝奪喜愛，旨在減少不當行為。",
+        ],
+      },
+      {
+        category: "教育現場建議",
+        items: [
+          "增強的效果遠大於懲罰。過度依賴懲罰可能導致學生習得無助感或產生焦慮。",
+        ],
+      },
+    ],
+    segments: [
+      {
+        time: "00:00",
+        text: "如果你的學生表現好，你會給他貼紙嗎？這就是 B.F. Skinner 說的操作制約。",
+      },
+      {
+        time: "01:20",
+        text: "行為的後果會決定這個行為以後會不會再發生。我們最常用的是『正增強』。",
+      },
+      {
+        time: "02:50",
+        text: "很多人會搞混『負增強』。這不是懲罰喔！它是移走不舒服的東西。比如你表現好，我就免除你今天的打掃工作。",
+      },
+      {
+        time: "04:30",
+        text: "至於懲罰，雖然能快速壓制行為，但斯金納不建議常使用，因為它會產生負面情緒，甚至破壞師生關係。",
+      },
+      {
+        time: "06:15",
+        text: "最好的方式是『忽略不當行為，增強正確行為』。讓正確的行為被獎勵機制留下來。",
+      },
+      {
+        time: "08:00",
+        text: "這套理論在特教班或一般的班級經營中，至今仍然是非常強大的工具。",
+      },
+    ],
+    isFavorite: false,
+    isDeleted: false,
+  },
+  {
+    id: "note-long-4",
+    title: "社會學習理論：班杜拉與波波玩偶",
+    intro:
+      "跳脫獎懲框架，強調『觀察』與『模仿』的重要性。詳述人類如何透過社會互動建立自我效能感。",
+    date: "3 / 4",
+    duration: "11:30",
+    category: "心理學",
+    sections: [
+      {
+        category: "觀察學習四階段",
+        items: [
+          "**注意**：觀察模範者的行為。",
+          "**保持**：將行為記憶在大腦中。",
+          "**產出**：具備執行該行為的能力。",
+          "**動機**：有理由想去執行它。",
+        ],
+      },
+      {
+        category: "自我效能 (Self-efficacy)",
+        items: [
+          "相信自己有能力完成特定任務的信心。這受成功經驗與他人說服影響。",
+        ],
+      },
+    ],
+    segments: [
+      {
+        time: "00:00",
+        text: "為什麼小孩會學大人說髒話？就算你沒獎勵他，他還是學會了。這就是 Bandura 的社會學習論。",
+      },
+      {
+        time: "02:10",
+        text: "他在著名的 Bobo Doll 實驗中發現，小孩只要看到大人打玩偶，即使沒被教導，也會模仿暴力的動作。",
+      },
+      {
+        time: "03:45",
+        text: "學習的第一步是『注意』。如果你這個老師不夠吸引人，學生根本不會去觀察你的示範。",
+      },
+      {
+        time: "05:30",
+        text: "接著是『保持』，他們要在腦袋裡演練一遍。最後是『產出』跟『動機』。",
+      },
+      {
+        time: "07:00",
+        text: "Bandura 還提到一個很重要的詞：『自我效能感』。就是你覺得你自己行不行。",
+      },
+      {
+        time: "08:45",
+        text: "一個自我效能感強的人，遇到困難會想辦法解決；弱的人則會直接放棄。",
+      },
+      {
+        time: "10:30",
+        text: "所以老師的職責不只是教書，更是要成為一個值得模仿的榜樣，並建立學生的信心。",
+      },
+    ],
+    isFavorite: true,
+    isDeleted: false,
+  },
+  {
+    id: "note-long-5",
+    title: "訊息處理理論：記憶的運作模型",
+    intro:
+      "將人類大腦類比為電腦。解析感官、短期與長期記憶之間的轉換過程，以及有效的學習編碼策略。",
+    date: "3 / 5",
+    duration: "13:50",
+    category: "教育學",
+    sections: [
+      {
+        category: "記憶三階段",
+        items: [
+          "**感官記憶**：存留時間極短，僅篩選有注意到的訊息。",
+          "**短期/工作記憶**：容量有限 (約7±2個單位)，需透過覆誦維持。",
+          "**長期記憶**：近乎無限的儲存空間，需透過『意譯編碼』長期保存。",
+        ],
+      },
+      {
+        category: "有效複習技巧",
+        items: [
+          "**塊狀化 (Chunking)**：將零散資訊組合成意義群組。",
+          "**精緻化複習**：將新知識與舊經驗連結，而非機械式背誦。",
+        ],
+      },
+    ],
+    segments: [
+      {
+        time: "00:00",
+        text: "大腦是怎麼存東西的？我們可以把大腦想像成一台效能極佳的電腦。",
+      },
+      {
+        time: "01:30",
+        text: "第一站是感官記憶。你現在看到的所有畫面都在這裡，但如果你沒『注意』，幾秒鐘就消失了。",
+      },
+      {
+        time: "03:00",
+        text: "被注意到的訊息會進入『工作記憶』。但它的空間很小，大約只能同時記住七組號碼。",
+      },
+      {
+        time: "04:45",
+        text: "如果你想考高分，你必須把東西搬進『長期記憶』。這需要『編碼』，也就是把知識分類、整理。",
+      },
+      {
+        time: "06:15",
+        text: "有一招叫『塊狀化』。比如記手機號碼 0912-345-678，比記十個獨立數字容易多了。",
+      },
+      {
+        time: "08:30",
+        text: "老師在教學時，如果一次塞太多，學生的工作記憶會『溢位』，那就等於白講了。",
+      },
+      {
+        time: "10:50",
+        text: "這就是為什麼皮皮強調要分段錄音、分段整理的原因，這符合訊息處理的心理規則。",
       },
     ],
     isFavorite: false,
@@ -1061,26 +1273,87 @@ function permanentClearAll() {
  */
 function checkAnswer(btn, selected, correct) {
   const allBtns = btn.parentElement.querySelectorAll("button");
-  const isCorrect = selected === correct;
+  // 強制轉為數字進行比對，確保 "0" == 0
+  const corrIdx = Number(correct);
+  const isCorrect = Number(selected) === corrIdx;
 
-  // 記錄數據
+  // 1. 紀錄到長期看板
   saveQuizRecord({
     noteId: currentNoteData?.id || "smart-review",
     category: currentNoteData?.category || "綜合複習",
-    type: selectedQuizType, // 使用我們全域變數存的題型
+    type: selectedQuizType,
     isCorrect: isCorrect,
   });
 
+  // 2. 累計本次測驗分數
+  currentSessionScore.total++;
+  if (isCorrect) currentSessionScore.correct++;
+
+  // 3. UI 顯示對錯
   if (isCorrect) {
     btn.classList.add("quiz-correct");
     btn.innerHTML += " ✅";
   } else {
     btn.classList.add("quiz-wrong");
-    allBtns[correct]?.classList.add("quiz-correct");
+    // 確保 corrIdx 是數字，否則會抓不到按鈕
+    if (!isNaN(corrIdx) && allBtns[corrIdx]) {
+      allBtns[corrIdx].classList.add("quiz-correct");
+    }
   }
-  allBtns.forEach((b) => (b.disabled = true));
-}
 
+  allBtns.forEach((b) => (b.disabled = true));
+
+  // 4. 檢查是否全部答完
+  const totalBtns = document.querySelectorAll(
+    'button[data-action="quiz-answer"]',
+  ).length;
+  const disabledBtns = document.querySelectorAll(
+    'button[data-action="quiz-answer"]:disabled',
+  ).length;
+
+  if (disabledBtns === totalBtns && totalBtns > 0) {
+    setTimeout(() => showQuizResult(), 1000);
+  }
+}
+function showQuizResult() {
+  const content = safeEl("modal-content");
+  const { correct, total } = currentSessionScore;
+  const accuracy = Math.round((correct / total) * 100);
+
+  let comment =
+    accuracy >= 80
+      ? "太強了！這份筆記你已經完全精通 ✨"
+      : accuracy >= 50
+        ? "做得好！再複習一下弱點就完美了 💪"
+        : "別灰心，皮皮陪你再看一次筆記 🍎";
+
+  content.innerHTML = `
+    <div class="text-center py-6 animate-fadeIn">
+      <div class="w-24 h-24 mx-auto mb-6 relative flex items-center justify-center">
+        <svg class="absolute inset-0 w-full h-full -rotate-90">
+          <circle cx="48" cy="48" r="44" stroke="#f3f4f6" stroke-width="8" fill="transparent" />
+          <circle cx="48" cy="48" r="44" stroke="#13B5B1" stroke-width="8" fill="transparent" 
+            stroke-dasharray="276" stroke-dashoffset="${276 - (276 * accuracy) / 100}" />
+        </svg>
+        <span class="text-2xl font-black text-gray-800">${accuracy}%</span>
+      </div>
+      
+      <h3 class="text-lg font-black text-gray-800 mb-2">測驗完成！</h3>
+      <p class="text-xs text-gray-400 font-bold px-6 leading-relaxed mb-8">${comment}</p>
+      
+      <div class="flex flex-col gap-3 px-6">
+        <button onclick="navigateTo('page-settings'); closeModal();" 
+          class="w-full py-4 bg-[#13B5B1] text-white rounded-2xl text-xs font-black shadow-lg">
+          查看長期學習進度
+        </button>
+        <button onclick="closeModal()" 
+          class="w-full py-4 bg-gray-50 text-gray-400 rounded-2xl text-xs font-black">
+          返回筆記
+        </button>
+      </div>
+    </div>
+  `;
+}
 // 修改 main.js 中的 openQuizSettings
 
 // --- 整合後的測驗設定邏輯 ---
@@ -1203,7 +1476,7 @@ function bindQuizSettingsEvents(isReviewMode) {
 async function generateCustomQuiz(count, type, isReviewMode = false) {
   let contentData = "";
   let loadingMsg = "";
-
+  currentSessionScore = { correct: 0, total: 0 }; // 🚀 每次新測驗都要歸零！
   // 1. 決定資料來源
   if (isReviewMode) {
     // 智能複習模式：整合所有選取的筆記內容
@@ -1480,7 +1753,7 @@ function renderLearningDashboard() {
   if (!container) return;
 
   if (quizHistory.length === 0) {
-    container.innerHTML = `<p class="text-xs text-gray-400 text-center py-4 font-bold">目前尚無測驗數據，開始挑戰吧！✨</p>`;
+    container.innerHTML = `<p class="text-xs text-gray-400 text-center py-8 font-bold">✨ 開始您的第一次測驗，<br>皮皮將為您生成數據報告！</p>`;
     return;
   }
 
@@ -1488,7 +1761,10 @@ function renderLearningDashboard() {
   const correct = quizHistory.filter((h) => h.isCorrect).length;
   const accuracy = Math.round((correct / total) * 100);
 
-  // 弱點分析：計算各分類正確率
+  // 決定主顏色
+  const themeColor =
+    accuracy >= 80 ? "#10b981" : accuracy >= 60 ? "#13B5B1" : "#f59e0b";
+
   const categories = [...new Set(quizHistory.map((h) => h.category))];
   const catStats = categories
     .map((cat) => {
@@ -1498,32 +1774,42 @@ function renderLearningDashboard() {
       );
       return { name: cat, score };
     })
-    .sort((a, b) => a.score - b.score); // 由低到高排，顯示弱點
+    .sort((a, b) => a.score - b.score);
 
   container.innerHTML = `
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h4 class="text-2xl font-black text-[#13B5B1]">${accuracy}%</h4>
-        <p class="text-[9px] text-gray-400 font-black">總體正確率</p>
+    <div class="flex items-center justify-between mb-8 p-4 bg-gray-50 rounded-3xl border border-gray-100/50">
+      <div class="relative w-20 h-20 flex items-center justify-center">
+        <svg class="absolute inset-0 w-full h-full -rotate-90">
+          <circle cx="40" cy="40" r="36" stroke="#e5e7eb" stroke-width="6" fill="transparent" />
+          <circle cx="40" cy="40" r="36" stroke="${themeColor}" stroke-width="6" fill="transparent" 
+            stroke-dasharray="226" stroke-dashoffset="${226 - (226 * accuracy) / 100}" style="transition: stroke-dashoffset 1s ease-out" />
+        </svg>
+        <span class="text-lg font-black" style="color: ${themeColor}">${accuracy}%</span>
       </div>
       <div class="text-right">
-        <h4 class="text-sm font-black text-gray-800">${total}</h4>
-        <p class="text-[9px] text-gray-400 font-black">累計答題數</p>
+        <p class="text-[10px] text-gray-400 font-black uppercase tracking-widest mb-1">累計答題</p>
+        <h4 class="text-2xl font-black text-gray-800">${total} <span class="text-[10px] text-gray-400">次</span></h4>
       </div>
     </div>
     
-    <div class="space-y-4">
-      <p class="text-[10px] text-gray-400 font-black uppercase border-b border-gray-50 pb-2">弱點分析 (正確率最低)</p>
+    <div class="space-y-5">
+      <div class="flex justify-between items-center ml-1">
+        <p class="text-[10px] text-gray-400 font-black uppercase tracking-widest">弱點學科分析</p>
+        <i class="fas fa-chart-line text-gray-300 text-[10px]"></i>
+      </div>
       ${catStats
         .slice(0, 3)
         .map(
           (cat) => `
-        <div class="flex items-center gap-3">
-          <div class="text-[10px] font-black text-gray-600 w-16 truncate">${cat.name}</div>
-          <div class="flex-1 h-2 bg-gray-50 rounded-full overflow-hidden">
-            <div class="h-full bg-orange-400" style="width: ${cat.score}%"></div>
+        <div class="group">
+          <div class="flex justify-between mb-2">
+            <span class="text-[11px] font-black text-gray-700">${cat.name}</span>
+            <span class="text-[10px] font-black text-orange-500">${cat.score}%</span>
           </div>
-          <div class="text-[9px] font-black text-orange-500">${cat.score}%</div>
+          <div class="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full rounded-full transition-all duration-1000" 
+                 style="width: ${cat.score}%; background: linear-gradient(90deg, #f59e0b, #fbbf24)"></div>
+          </div>
         </div>
       `,
         )
@@ -1567,20 +1853,32 @@ Object.assign(window, {
 
     if (currentActivePage && pageId === "page-content") {
       const from = currentActivePage.id;
-
       if (from !== "page-loading" && from !== "page-record") {
         lastActivePageId = from;
       }
     }
 
-    pages.forEach((p) => p.classList.add("hidden"));
-    safeEl(pageId)?.classList.remove("hidden");
+    pages.forEach((p) => {
+      p.classList.add("hidden");
+      p.classList.remove("active");
+    });
+
+    const targetPage = safeEl(pageId);
+    if (targetPage) {
+      targetPage.classList.remove("hidden");
+
+      requestAnimationFrame(() => {
+        targetPage.classList.add("active");
+      });
+    }
 
     const nav = safeEl("main-nav");
     if (nav) {
-      if (pageId === "page-record" || pageId === "page-loading")
+      if (pageId === "page-record" || pageId === "page-loading") {
         nav.classList.add("hidden");
-      else nav.classList.remove("hidden");
+      } else {
+        nav.classList.remove("hidden");
+      }
     }
 
     rerenderForPage(pageId);
@@ -1894,32 +2192,44 @@ Object.assign(window, {
         const userInput = inputEl.value.trim().toLowerCase();
         const target = correctAnswer.trim().toLowerCase();
 
-        // 停用輸入與按鈕
+        const isCorrect = userInput === target; // 🚀 只在這裡宣告一次！
+
         inputEl.disabled = true;
         el.disabled = true;
         el.style.opacity = "0.5";
 
-        if (userInput === target) {
-          // 答對邏輯
+        if (isCorrect) {
           inputEl.classList.add("border-green-500", "bg-green-50");
-          feedbackEl.innerHTML = `<span class="text-green-600">✅ 太棒了！答案完全正確。</span>`;
-          feedbackEl.classList.remove("hidden");
-          // TODO: recordSuccess() -> 之後連動學習看板
+          feedbackEl.innerHTML = `<span class="text-green-600 font-black">✅ 太棒了！答案完全正確。</span>`;
         } else {
-          // 答錯邏輯
           inputEl.classList.add("border-red-500", "bg-red-50");
-          feedbackEl.innerHTML = `<span class="text-red-600">❌ 可惜了，正確答案是：${correctAnswer}</span>`;
-          feedbackEl.classList.remove("hidden");
-          // TODO: recordFailure() -> 之後連動錯題集
+          feedbackEl.innerHTML = `<span class="text-red-600 font-black">❌ 可惜了，正確答案是：${correctAnswer}</span>`;
         }
+        feedbackEl.classList.remove("hidden");
+
         saveQuizRecord({
           noteId: currentNoteData?.id || "smart-review",
           category: currentNoteData?.category || "綜合複習",
           type: "fib",
           isCorrect: isCorrect,
         });
+
+        currentSessionScore.total++;
+        if (isCorrect) currentSessionScore.correct++;
+
+        const totalQuestions = document.querySelectorAll(
+          'button[data-action="check-fib"]',
+        ).length;
+        const disabledQuestions = document.querySelectorAll(
+          'button[data-action="check-fib"]:disabled',
+        ).length;
+
+        if (disabledQuestions === totalQuestions) {
+          setTimeout(() => showQuizResult(), 1000);
+        }
         break;
-      } // main.js 的事件處理區塊
+      }
+
       case "clear-quiz-history": {
         if (confirm("確定要將所有測驗紀錄歸零嗎？這不會刪除您的筆記喔！✨")) {
           // 1. 清空記憶體中的陣列
