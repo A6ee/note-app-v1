@@ -40,6 +40,26 @@ function saveQuizRecord(record) {
   });
   localStorage.setItem("president_quiz_history", JSON.stringify(quizHistory));
 }
+
+// main.js
+let wrongQuestions =
+  JSON.parse(localStorage.getItem("president_wrong_questions")) || [];
+
+// 艾賓浩斯複習間隔 (毫秒)
+const EB_INTERVALS = [
+  0, // Level 0: 初始
+  86400000, // Level 1: 1天後
+  259200000, // Level 2: 3天後
+  604800000, // Level 3: 7天後
+  1209600000, // Level 4: 14天後 (進入長期記憶)
+];
+
+function saveWrongQuestions() {
+  localStorage.setItem(
+    "president_wrong_questions",
+    JSON.stringify(wrongQuestions),
+  );
+}
 /**
  * Notes / Settings
  */
@@ -359,6 +379,29 @@ let tempSelectedAvatar = appSettings.avatarSeed;
  * 1) Utils（小工具）
  * =========================================================
  */
+// main.js
+
+/**
+ * 🚀 自動調整標題字體大小
+ */
+function adjustTitleFontSize() {
+  const titleEl = safeEl("content-title");
+  if (!titleEl) return;
+
+  // 1. 先重置為基礎大小，以便重新計算
+  titleEl.style.fontSize = "14px";
+
+  // 2. 設定縮放參數
+  let currentSize = 14;
+  const minSize = 10; // 最低字體限制，避免字太小看不見
+
+  // 3. 核心偵測邏輯：當內容寬度大於容器寬度時，持續縮小字體
+  // 增加迴圈檢查，直到寬度符合或達到最小值為止
+  while (titleEl.scrollWidth > titleEl.offsetWidth && currentSize > minSize) {
+    currentSize -= 0.5;
+    titleEl.style.fontSize = `${currentSize}px`;
+  }
+}
 
 function safeEl(id) {
   return document.getElementById(id);
@@ -479,9 +522,10 @@ function markNoteDeleted(noteId) {
  * =========================================================
  */
 
+// main.js
 function initRecognition() {
   if (!("webkitSpeechRecognition" in window)) {
-    console.warn("This browser does not support webkitSpeechRecognition.");
+    console.warn("此瀏覽器不支援語音辨識");
     return;
   }
 
@@ -494,16 +538,21 @@ function initRecognition() {
     let interim = "";
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       const piece = event.results[i][0]?.transcript || "";
-      if (event.results[i].isFinal) fullTranscript += piece;
-      else interim += piece;
+      if (event.results[i].isFinal) {
+        if (!fullTranscript.endsWith(piece.trim())) {
+          fullTranscript += piece;
+        }
+      } else {
+        interim += piece;
+      }
     }
 
     lastInterim = interim;
+    const finalDisplay = (fullTranscript + interim).trim();
 
-    localStorage.setItem("temp_transcript", fullTranscript + interim || "");
-
+    localStorage.setItem("temp_transcript", finalDisplay || "");
     const el = safeEl("live-transcript");
-    if (el) el.innerText = fullTranscript + interim || "皮皮正在聽課...";
+    if (el) el.innerText = finalDisplay || "皮皮正在聽課...";
   };
 
   recognition.onend = () => {
@@ -514,14 +563,8 @@ function initRecognition() {
       try {
         recognition.start();
         recognitionEndFailCount = 0;
-      } catch (e) {
-        recognitionEndFailCount++;
-        if (recognitionEndFailCount >= 5) {
-          isRecording = false;
-          alert("語音辨識連續失敗，已停止錄音。請重新開始錄音。");
-        }
-      }
-    }, 600);
+      } catch (e) {}
+    }, 400); // 縮短重啟延遲
   };
 }
 
@@ -674,7 +717,9 @@ async function callGemini(prompt, responseSchema = null, retryCount = 0) {
  */
 
 function getAllCategories() {
-  const cats = notesLibrary.map((n) => (n.category || "未分類").trim());
+  const cats = notesLibrary
+    .filter((n) => !n.isDeleted)
+    .map((n) => (n.category || "未分類").trim());
   const uniq = [...new Set(cats)].filter(Boolean);
   return ["全部", ...uniq];
 }
@@ -1009,9 +1054,10 @@ function renderReviewSelection() {
 
           <div class="note-card-main" data-action="review-toggle-note" data-id="${note.id}">
             <div class="flex justify-between items-start mb-2">
-              <div class="font-black text-gray-800 text-sm leading-snug flex-1">${note.title || "未命名筆記"}${
-                note.isFavorite ? " ★" : ""
-              }</div>
+              <div class="font-black text-gray-800 text-sm leading-snug flex-1">
+                ${note.title || "未命名筆記"}
+                ${note.isFavorite ? '<i class="fas fa-star text-yellow-400 text-[10px] ml-1"></i>' : ""}
+              </div>
               <span class="ml-2 px-2 py-0.5 bg-[#13B5B1]/10 text-[#13B5B1] text-[8px] rounded-full font-black whitespace-nowrap">
                 ${note.category || "未分類"}
               </span>
@@ -1121,6 +1167,7 @@ function editNoteTitle() {
 
   saveNotesToDisk();
   safeEl("content-title").innerText = v;
+  adjustTitleFontSize();
   renderNotesList();
 }
 
@@ -1271,13 +1318,13 @@ function permanentClearAll() {
 /**
  * Quiz / Expand / Export
  */
+// main.js
 function checkAnswer(btn, selected, correct) {
   const allBtns = btn.parentElement.querySelectorAll("button");
-  // 強制轉為數字進行比對，確保 "0" == 0
   const corrIdx = Number(correct);
   const isCorrect = Number(selected) === corrIdx;
 
-  // 1. 紀錄到長期看板
+  // 1. 紀錄到長期看板（原有功能）
   saveQuizRecord({
     noteId: currentNoteData?.id || "smart-review",
     category: currentNoteData?.category || "綜合複習",
@@ -1285,17 +1332,42 @@ function checkAnswer(btn, selected, correct) {
     isCorrect: isCorrect,
   });
 
-  // 2. 累計本次測驗分數
+  // 2. 累計本次測驗分數（原有功能）
   currentSessionScore.total++;
   if (isCorrect) currentSessionScore.correct++;
 
-  // 3. UI 顯示對錯
+  // 🚀 3. 新增：艾賓浩斯錯題重測邏輯
+  // 透過 DOM 找到該題目文字（並過濾掉前面的序號，如 "1. "）
+  const questionContainer = btn.closest(".mb-8");
+  const questionText = questionContainer
+    .querySelector("p")
+    .innerText.replace(/^\d+\.\s/, "");
+
+  if (isCorrect) {
+    // 答對：如果是之前錯過的題目，就提升其記憶等級
+    promoteWrongQuestion(questionText);
+  } else {
+    // 答錯：將題目、選項與正確答案存入錯題庫，並啟動艾賓浩斯排程
+    const options = Array.from(
+      questionContainer.querySelectorAll("button.quiz-option"),
+    ).map((b) => b.innerText);
+
+    addToWrongQuestions(
+      {
+        question: questionText,
+        options: options,
+        answer: correct,
+      },
+      selectedQuizType,
+    );
+  }
+
+  // 4. UI 顯示對錯（原有功能）
   if (isCorrect) {
     btn.classList.add("quiz-correct");
     btn.innerHTML += " ✅";
   } else {
     btn.classList.add("quiz-wrong");
-    // 確保 corrIdx 是數字，否則會抓不到按鈕
     if (!isNaN(corrIdx) && allBtns[corrIdx]) {
       allBtns[corrIdx].classList.add("quiz-correct");
     }
@@ -1303,7 +1375,7 @@ function checkAnswer(btn, selected, correct) {
 
   allBtns.forEach((b) => (b.disabled = true));
 
-  // 4. 檢查是否全部答完
+  // 5. 檢查是否全部答完（原有功能）
   const totalBtns = document.querySelectorAll(
     'button[data-action="quiz-answer"]',
   ).length;
@@ -1315,6 +1387,7 @@ function checkAnswer(btn, selected, correct) {
     setTimeout(() => showQuizResult(), 1000);
   }
 }
+
 function showQuizResult() {
   const content = safeEl("modal-content");
   const { correct, total } = currentSessionScore;
@@ -1817,6 +1890,60 @@ function renderLearningDashboard() {
     </div>
   `;
 }
+
+//
+function addToWrongQuestions(qObj, type) {
+  // 檢查是否已存在
+  const existingIdx = wrongQuestions.findIndex(
+    (item) => item.question === qObj.question,
+  );
+
+  if (existingIdx === -1) {
+    wrongQuestions.push({
+      question: qObj.question,
+      options: qObj.options || [],
+      answer: qObj.answer,
+      type: type,
+      level: 1, // 第一次答錯從 Level 1 開始
+      nextReviewTime: Date.now() + EB_INTERVALS[1],
+    });
+  } else {
+    // 若再次答錯，重置複習時間
+    wrongQuestions[existingIdx].level = 1;
+    wrongQuestions[existingIdx].nextReviewTime = Date.now() + EB_INTERVALS[1];
+  }
+  saveWrongQuestions();
+}
+
+function promoteWrongQuestion(qText) {
+  const idx = wrongQuestions.findIndex((item) => item.question === qText);
+  if (idx === -1) return;
+
+  const q = wrongQuestions[idx];
+  q.level++;
+
+  if (q.level >= EB_INTERVALS.length) {
+    wrongQuestions.splice(idx, 1); // 進入長期記憶，移出清單
+  } else {
+    q.nextReviewTime = Date.now() + EB_INTERVALS[q.level];
+  }
+  saveWrongQuestions();
+}
+
+function renderSRSSection() {
+  const section = safeEl("srs-review-section");
+  if (!section) return;
+
+  const dueQuestions = wrongQuestions.filter(
+    (q) => q.nextReviewTime <= Date.now(),
+  );
+  if (dueQuestions.length > 0) {
+    section.classList.remove("hidden");
+    safeEl("srs-count").innerText = dueQuestions.length;
+  } else {
+    section.classList.add("hidden");
+  }
+}
 /**
  * =========================================================
  * 7) Navigation / Global bindings
@@ -1833,6 +1960,7 @@ function rerenderForPage(pageId) {
   } else if (pageId === "page-review") {
     renderCategoryFilters();
     renderReviewSelection();
+    renderSRSSection();
   } else if (pageId === "page-settings") {
     loadSettingsToUI();
     renderLearningDashboard();
@@ -1927,6 +2055,7 @@ Object.assign(window, {
 
     // 3. 執行導覽跳轉
     window.navigateTo("page-content");
+    requestAnimationFrame(adjustTitleFontSize);
   },
 
   closeModal,
@@ -2177,6 +2306,20 @@ Object.assign(window, {
         call(openQuizSettings);
         break;
 
+      case "start-srs-quiz": {
+        // 篩選出今天到期的錯題
+        const dueQuestions = wrongQuestions.filter(
+          (q) => q.nextReviewTime <= Date.now(),
+        );
+        if (dueQuestions.length > 0) {
+          // 呼叫我們之前的渲染函數，並傳入題型
+          renderQuizUI({ questions: dueQuestions }, "srs", dueQuestions.length);
+          // 開啟 Modal 顯示題目
+          safeEl("ai-modal").style.display = "flex";
+        }
+        break;
+      }
+
       case "quiz-answer": {
         const selected = Number(el.dataset.selected);
         const correct = Number(el.dataset.correct);
@@ -2396,6 +2539,7 @@ window.addEventListener("load", () => {
   initRecognition();
   updateHomeGreeting();
   renderCategoryFilters();
+  window.navigateTo("page-home");
   syncLayoutHeights();
   requestAnimationFrame(syncLayoutHeights);
   setTimeout(syncLayoutHeights, 200);
@@ -2422,5 +2566,8 @@ window.addEventListener("orientationchange", syncLayoutHeights);
 })();
 
 if (window.visualViewport) {
-  window.visualViewport.addEventListener("resize", syncLayoutHeights);
+  window.addEventListener("resize", () => {
+    syncLayoutHeights();
+    adjustTitleFontSize(); // 🚀 新增：螢幕旋轉或縮放時重新計算
+  });
 }

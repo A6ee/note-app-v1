@@ -144,8 +144,8 @@ body {
 
 .left-slot,
 .right-slot {
-  width: 100px;
-  min-width: 84px;
+  width: 132px;
+  min-width: 132px;
   display: flex;
   align-items: center;
 }
@@ -160,6 +160,15 @@ body {
   align-items: center;
   justify-content: center;
   text-align: center;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.page-title {
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .app-header .right-slot div img {
@@ -492,4 +501,19 @@ body {
   line-height: 1.6;
   margin-bottom: 12px;
   font-style: normal !important;
+}
+
+/* style.css */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out forwards;
 }
