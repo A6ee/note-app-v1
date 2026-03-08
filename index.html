@@ -6,7 +6,11 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <title>認知破壞終結者3.0 ✨</title>
+    <meta
+      name="description"
+      content="認知破壞終結者 3.0：課堂錄音、AI 筆記整理、智能複習與學習成效追蹤。"
+    />
+    <title>認知破壞終結者 3.0 ✨</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15,51 +19,66 @@
       rel="stylesheet"
     />
 
+    <script>
+      tailwind = {
+        config: {
+          theme: {
+            extend: {
+              colors: {
+                brand: "#13b5b1",
+                "brand-light": "#f0f9f9",
+              },
+            },
+          },
+        },
+      };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
     />
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"
+      defer
+    ></script>
 
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="./style.css" />
   </head>
 
   <body class="bg-gray-100">
     <div class="phone-container">
-      <!-- =========================================================
-        0) Home
-      ========================================================== -->
-      <div id="page-home" class="page page-home">
+      <section id="page-home" class="page page-home" aria-label="首頁">
         <div class="home-scroll no-scrollbar">
-          <!-- Header（放在 scroll container 第一層，避免 sticky/置中被 padding 影響） -->
           <header class="app-header">
             <div class="header-content-wrapper">
               <div class="left-slot">
                 <p
                   class="text-[10px] text-gray-300 font-black tracking-widest uppercase"
                 >
-                  認知破壞終結者3.0
+                  認知破壞終結者 3.0
                 </p>
               </div>
+
               <div class="center-slot">
-                <h2
+                <h1
                   id="home-user-greeting"
                   class="text-base font-black text-gray-800"
                 >
                   您好 ✨
-                </h2>
+                </h1>
               </div>
+
               <div class="right-slot">
                 <div
                   class="w-10 h-10 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
                 >
-                  <img id="home-avatar-img" src="" alt="Student" />
+                  <img id="home-avatar-img" src="" alt="使用者頭像" />
                 </div>
               </div>
             </div>
           </header>
 
-          <!-- 內容區 padding -->
           <div class="home-content px-6 pt-6">
             <div class="flex items-end gap-3 mb-10">
               <div class="relative flex-shrink-0">
@@ -69,7 +88,7 @@
                   <img
                     src="https://api.dicebear.com/7.x/bottts/svg?seed=Felix"
                     class="w-full h-full"
-                    alt="Assistant"
+                    alt="皮皮助手"
                   />
                 </div>
                 <div
@@ -88,12 +107,12 @@
               </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
-              <div
+            <div class="grid grid-cols-2 gap-4" aria-label="首頁功能選單">
+              <button
+                type="button"
                 data-page="page-list"
                 class="home-grid-card"
-                role="button"
-                tabindex="0"
+                aria-label="前往課堂筆記"
               >
                 <div
                   class="w-12 h-12 bg-cyan-50 text-[#13B5B1] rounded-2xl flex items-center justify-center mb-1"
@@ -102,13 +121,13 @@
                 </div>
                 <h4>課堂筆記</h4>
                 <p class="uppercase">Notes</p>
-              </div>
+              </button>
 
-              <div
+              <button
+                type="button"
                 data-page="page-review"
                 class="home-grid-card"
-                role="button"
-                tabindex="0"
+                aria-label="前往智能複習"
               >
                 <div
                   class="w-12 h-12 bg-orange-50 text-orange-400 rounded-2xl flex items-center justify-center mb-1"
@@ -117,13 +136,13 @@
                 </div>
                 <h4>智能複習</h4>
                 <p class="uppercase">Review</p>
-              </div>
+              </button>
 
-              <div
+              <button
+                type="button"
                 data-page="page-trash"
                 class="home-grid-card"
-                role="button"
-                tabindex="0"
+                aria-label="前往回收站"
               >
                 <div
                   class="w-12 h-12 bg-red-50 text-red-400 rounded-2xl flex items-center justify-center mb-1"
@@ -132,13 +151,13 @@
                 </div>
                 <h4>回收站</h4>
                 <p class="uppercase">Trash</p>
-              </div>
+              </button>
 
-              <div
+              <button
+                type="button"
                 data-page="page-settings"
                 class="home-grid-card"
-                role="button"
-                tabindex="0"
+                aria-label="前往個人設定"
               >
                 <div
                   class="w-12 h-12 bg-purple-50 text-purple-400 rounded-2xl flex items-center justify-center mb-1"
@@ -147,35 +166,42 @@
                 </div>
                 <h4>個人設定</h4>
                 <p class="uppercase">Settings</p>
-              </div>
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- Bottom CTA（統一按鈕 class） -->
         <div class="home-cta">
-          <button data-action="start-record" class="cta-btn cta-primary">
-            <i class="fas fa-microphone-alt text-lg"></i> 開始新錄音
+          <button
+            type="button"
+            data-action="start-record"
+            class="cta-btn cta-primary"
+          >
+            <i class="fas fa-microphone-alt text-lg"></i>
+            <span>開始新錄音</span>
           </button>
         </div>
-      </div>
+      </section>
 
-      <!-- =========================================================
-        1) List
-      ========================================================== -->
-      <div id="page-list" class="page hidden page-list overflow-hidden">
+      <section
+        id="page-list"
+        class="page hidden page-list overflow-hidden"
+        aria-label="課堂筆記"
+      >
         <header class="app-header shadow-sm">
           <div class="header-content-wrapper">
             <div class="left-slot">
-              <div
+              <button
+                type="button"
                 data-page="page-home"
                 class="w-10 h-10 flex items-center justify-center rounded-xl text-gray-400 cursor-pointer active:scale-90 transition-all"
+                aria-label="返回首頁"
               >
                 <i class="fas fa-chevron-left"></i>
-              </div>
+              </button>
             </div>
             <div class="center-slot">
-              <h1 class="text-base font-black text-gray-800">課堂記錄</h1>
+              <h2 class="text-base font-black text-gray-800">課堂記錄</h2>
             </div>
             <div class="right-slot"></div>
           </div>
@@ -183,7 +209,7 @@
 
         <div class="list-bars-container bg-white">
           <div class="rwd-content-wrapper px-6 py-3 border-b border-gray-50">
-            <div
+            <label
               class="flex items-center bg-gray-50 rounded-2xl px-3 border border-gray-100 focus-within:border-[#13B5B1] transition-all"
             >
               <i class="fas fa-search text-gray-300 text-xs"></i>
@@ -192,37 +218,49 @@
                 id="search-input"
                 placeholder="搜尋筆記紀錄..."
                 class="bg-transparent border-none outline-none px-2 py-2 text-xs w-full font-bold text-gray-600"
+                aria-label="搜尋筆記紀錄"
               />
-            </div>
+            </label>
           </div>
 
           <div
             class="rwd-content-wrapper px-6 py-2 border-b border-gray-50 flex items-center justify-between bg-white/95 backdrop-blur-sm"
           >
-            <div class="flex gap-4">
-              <span
+            <div class="flex gap-4" role="tablist" aria-label="筆記篩選">
+              <button
+                type="button"
                 data-filter="all"
                 id="filter-all"
                 class="text-xs font-black text-[#13B5B1] cursor-pointer border-b-2 border-[#13B5B1] pb-1"
-                >全部</span
               >
-              <span
+                全部
+              </button>
+              <button
+                type="button"
                 data-filter="fav"
                 id="filter-fav"
                 class="text-xs font-black text-gray-300 cursor-pointer pb-1"
-                >★ 收藏</span
               >
+                ★ 收藏
+              </button>
             </div>
+
             <div class="flex items-center gap-3">
               <div class="relative flex items-center">
-                <i
-                  class="fas fa-calendar-day text-gray-300 text-sm cursor-pointer hover:text-[#13B5B1] transition-colors"
+                <button
+                  type="button"
                   data-action="open-date-picker"
-                ></i>
+                  class="text-gray-300 text-sm hover:text-[#13B5B1] transition-colors"
+                  aria-label="開啟日期篩選"
+                >
+                  <i class="fas fa-calendar-day"></i>
+                </button>
                 <input
                   type="date"
                   id="date-filter"
                   class="absolute opacity-0 w-0 h-0 pointer-events-none"
+                  tabindex="-1"
+                  aria-hidden="true"
                 />
               </div>
               <div id="category-filter-container"></div>
@@ -232,8 +270,13 @@
 
         <div class="list-scroll no-scrollbar">
           <div class="px-6 pt-6">
-            <div class="flex p-1 bg-gray-100 rounded-full mb-8">
+            <div
+              class="flex p-1 bg-gray-100 rounded-full mb-8"
+              role="tablist"
+              aria-label="筆記檢視模式"
+            >
               <button
+                type="button"
                 data-list-view="note"
                 id="list-tab-note"
                 class="tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-[10px] font-black shadow-md"
@@ -241,6 +284,7 @@
                 AI 即時
               </button>
               <button
+                type="button"
                 data-list-view="transcript"
                 id="list-tab-transcript"
                 class="tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-[10px] font-black"
@@ -248,15 +292,19 @@
                 逐字稿
               </button>
             </div>
+
+            <div
+              class="mb-4 px-1 text-[10px] font-bold text-gray-300 tracking-widest uppercase"
+            >
+              提示：此處切換會決定點進筆記後預設顯示 AI 即時筆記或逐字稿。
+            </div>
+
             <div id="list-container" class="space-y-6"></div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- =========================================================
-        2) Record
-      ========================================================== -->
-      <div id="page-record" class="page p-6 hidden">
+      <section id="page-record" class="page p-6 hidden" aria-label="錄音中">
         <header class="app-header">
           <div class="header-content-wrapper">
             <div class="left-slot">
@@ -264,18 +312,16 @@
                 type="button"
                 data-action="cancel-record"
                 class="w-10 h-10 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400 active:scale-90 transition-all"
-                aria-label="返回"
+                aria-label="取消錄音並返回"
               >
                 <i class="fas fa-chevron-left"></i>
               </button>
             </div>
-
             <div class="center-slot">
-              <h1 class="page-title text-xl font-black text-gray-800">
+              <h2 class="page-title text-xl font-black text-gray-800">
                 正在錄音
-              </h1>
+              </h2>
             </div>
-
             <div class="right-slot"></div>
           </div>
         </header>
@@ -286,17 +332,20 @@
           <div
             id="record-timer"
             class="text-6xl font-black text-gray-800 mb-6 tracking-tighter"
+            aria-live="polite"
           >
             00:00
           </div>
           <div
             id="live-transcript"
-            class="text-xs text-brand/60 font-medium mb-10 text-center px-6 h-12 italic leading-relaxed"
+            class="text-xs text-[#13B5B1]/60 font-medium mb-10 text-center px-6 h-12 italic leading-relaxed"
+            aria-live="polite"
           >
             皮皮正在專心聽課...
           </div>
           <div
-            class="w-full h-40 bg-brand-light rounded-[3.5rem] flex items-center justify-around px-12 mb-20 border border-brand/10"
+            class="w-full h-40 bg-[#F0F9F9] rounded-[3.5rem] flex items-center justify-around px-12 mb-20 border border-[#13B5B1]/10"
+            aria-hidden="true"
           >
             <div class="wave-bar"></div>
             <div class="wave-bar"></div>
@@ -305,31 +354,31 @@
             <div class="wave-bar"></div>
           </div>
           <button
+            type="button"
             data-action="stop-record"
             id="stop-btn"
             class="w-24 h-24 bg-red-500 text-white rounded-full flex items-center justify-center text-3xl shadow-2xl active:scale-95 transition-all"
+            aria-label="停止錄音"
           >
             <i class="fas fa-stop"></i>
           </button>
         </div>
-      </div>
+      </section>
 
-      <!-- =========================================================
-        3) Loading
-      ========================================================== -->
-      <div id="page-loading" class="page hidden bg-[#13B5B1]">
+      <section
+        id="page-loading"
+        class="page hidden bg-[#13B5B1]"
+        aria-label="筆記整理中"
+      >
         <div
           class="flex-1 flex flex-col items-center justify-center text-white p-8 text-center"
         >
-          <div class="relative w-44 h-44 mb-10">
+          <div class="relative w-44 h-44 mb-10" aria-hidden="true">
             <div
               class="absolute inset-0 border-[6px] border-white/20 rounded-full"
             ></div>
             <div
               class="absolute inset-0 border-[6px] border-white rounded-full border-t-transparent animate-spin"
-            ></div>
-            <div
-              class="absolute inset-0 flex items-center justify-center text-6xl font-black font-serif italic"
             ></div>
           </div>
           <h2 class="text-2xl font-black tracking-widest mb-3">
@@ -338,16 +387,18 @@
           <p
             id="loading-msg"
             class="text-white/60 text-xs font-bold uppercase tracking-widest"
+            aria-live="polite"
           >
             精煉課堂重點中
           </p>
         </div>
-      </div>
+      </section>
 
-      <!-- =========================================================
-        4) Content
-      ========================================================== -->
-      <div id="page-content" class="page hidden overflow-hidden">
+      <section
+        id="page-content"
+        class="page hidden overflow-hidden"
+        aria-label="筆記內容"
+      >
         <header class="app-header">
           <div class="header-content-wrapper">
             <div class="left-slot">
@@ -355,24 +406,23 @@
                 type="button"
                 data-action="back-to-source"
                 class="w-10 h-10 flex items-center justify-center rounded-2xl bg-gray-50 text-gray-400 active:scale-90 transition-all"
-                aria-label="返回"
+                aria-label="返回上一頁"
               >
                 <i class="fas fa-chevron-left"></i>
               </button>
             </div>
-
             <div class="center-slot">
-              <h1
+              <h2
                 id="content-title"
                 data-action="edit-title"
                 class="page-title text-sm font-black text-gray-800 truncate px-4 text-center cursor-pointer hover:bg-gray-100 rounded-lg"
                 role="button"
                 tabindex="0"
+                aria-label="編輯筆記標題"
               >
                 課堂摘要
-              </h1>
+              </h2>
             </div>
-
             <div class="right-slot">
               <div class="flex gap-2">
                 <button
@@ -380,25 +430,23 @@
                   id="star-btn"
                   data-action="toggle-favorite"
                   class="w-10 h-10 flex items-center justify-center rounded-2xl bg-yellow-50 text-yellow-400 active:scale-90 transition-all"
-                  aria-label="收藏"
+                  aria-label="收藏筆記"
                 >
                   <i id="star-icon" class="far fa-star"></i>
                 </button>
-
                 <button
                   type="button"
                   data-action="delete-current"
                   class="w-10 h-10 flex items-center justify-center rounded-2xl bg-red-50 text-red-400 active:scale-90 transition-all"
-                  aria-label="刪除"
+                  aria-label="刪除此筆記"
                 >
                   <i class="fas fa-trash-alt"></i>
                 </button>
-
                 <button
                   type="button"
                   data-action="export-pdf"
                   class="w-10 h-10 flex items-center justify-center rounded-2xl bg-[#13B5B1]/10 text-[#13B5B1] active:scale-90 transition-all"
-                  aria-label="匯出PDF"
+                  aria-label="匯出 PDF"
                 >
                   <i class="fas fa-file-export"></i>
                 </button>
@@ -408,8 +456,13 @@
         </header>
 
         <div class="px-6 pt-4 pb-2 bg-white border-b border-gray-50">
-          <div class="flex p-1 bg-gray-100 rounded-full mb-2">
+          <div
+            class="flex p-1 bg-gray-100 rounded-full mb-2"
+            role="tablist"
+            aria-label="內容檢視模式"
+          >
             <button
+              type="button"
               data-content-view="note"
               id="tab-note"
               class="tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-xs font-black shadow-md"
@@ -417,6 +470,7 @@
               AI 即時筆記
             </button>
             <button
+              type="button"
               data-content-view="transcript"
               id="tab-transcript"
               class="tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-xs font-black"
@@ -448,22 +502,25 @@
 
           <div class="flex flex-col gap-2 mt-4 pb-12">
             <button
+              type="button"
               data-action="quiz"
-              class="w-full py-3 bg-white border border-brand text-brand rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
+              class="w-full py-3 bg-white border border-[#13B5B1] text-[#13B5B1] rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
             >
               ✨ 智能複習測驗
             </button>
 
             <div class="flex gap-2">
               <button
+                type="button"
                 data-action="change-category"
                 class="flex-1 py-3 bg-white border border-orange-400 text-orange-500 rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
               >
                 🏷️ 切換分類
               </button>
               <button
+                type="button"
                 data-action="expand"
-                class="flex-1 py-3 bg-white border border-brand text-brand rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
+                class="flex-1 py-3 bg-white border border-[#13B5B1] text-[#13B5B1] rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
               >
                 📚 擴充建議
               </button>
@@ -504,24 +561,27 @@
             >
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- =========================================================
-        5) Trash
-      ========================================================== -->
-      <div id="page-trash" class="page hidden page-trash overflow-hidden">
+      <section
+        id="page-trash"
+        class="page hidden page-trash overflow-hidden"
+        aria-label="回收站"
+      >
         <header class="app-header shadow-sm">
           <div class="header-content-wrapper">
             <div class="left-slot">
-              <div
+              <button
+                type="button"
                 data-page="page-home"
                 class="w-10 h-10 flex items-center justify-center rounded-xl text-gray-400 cursor-pointer active:scale-90 transition-all"
+                aria-label="返回首頁"
               >
                 <i class="fas fa-chevron-left"></i>
-              </div>
+              </button>
             </div>
             <div class="center-slot">
-              <h1 class="text-base font-black text-gray-800">回收站</h1>
+              <h2 class="text-base font-black text-gray-800">回收站</h2>
             </div>
             <div class="right-slot">
               <button
@@ -537,7 +597,7 @@
 
         <div class="list-bars-container bg-white border-b border-gray-100">
           <div class="rwd-content-wrapper px-6 py-3 border-b border-gray-50">
-            <div
+            <label
               class="flex items-center bg-gray-50 rounded-2xl px-3 border border-gray-100 focus-within:border-[#13B5B1] transition-all"
             >
               <i class="fas fa-search text-gray-300 text-xs"></i>
@@ -546,24 +606,29 @@
                 id="search-trash"
                 placeholder="搜尋刪除內容..."
                 class="bg-transparent border-none outline-none px-2 py-2 text-xs w-full font-bold text-gray-600"
+                aria-label="搜尋回收站內容"
               />
-            </div>
+            </label>
           </div>
 
           <div
             class="rwd-content-wrapper px-6 py-2 flex items-center justify-between bg-white/95 backdrop-blur-sm"
           >
             <div class="flex gap-4">
-              <span
+              <button
+                type="button"
                 data-filter="all"
                 class="text-xs font-black text-[#13B5B1] cursor-pointer border-b-2 border-[#13B5B1] pb-1"
-                >全部</span
               >
-              <span
+                全部
+              </button>
+              <button
+                type="button"
                 data-filter="fav"
                 class="text-xs font-black text-gray-300 cursor-pointer pb-1"
-                >★ 收藏</span
               >
+                ★ 收藏
+              </button>
             </div>
 
             <div class="flex items-center gap-3">
@@ -574,20 +639,26 @@
               >
                 一鍵全選
               </button>
-
               <div class="relative flex items-center">
-                <i
-                  class="fas fa-calendar-day text-gray-300 text-sm cursor-pointer hover:text-[#13B5B1] transition-colors"
+                <button
+                  type="button"
                   data-action="open-date-picker-trash"
-                ></i>
+                  class="text-gray-300 text-sm hover:text-[#13B5B1] transition-colors"
+                  aria-label="開啟回收站日期篩選"
+                >
+                  <i class="fas fa-calendar-day"></i>
+                </button>
                 <input
                   type="date"
                   id="date-filter-trash"
                   class="absolute opacity-0 w-0 h-0 pointer-events-none"
+                  tabindex="-1"
+                  aria-hidden="true"
                 />
               </div>
               <div id="category-filter-trash"></div>
               <button
+                type="button"
                 id="clear-date-trash"
                 data-action="clear-date"
                 class="hidden text-[10px] font-black text-red-400 bg-red-50 px-2 py-1 rounded-lg"
@@ -601,7 +672,6 @@
         <div class="flex-1 overflow-y-auto no-scrollbar">
           <div class="p-6">
             <div id="trash-container" class="flex flex-col gap-3"></div>
-
             <div
               id="trash-empty-state"
               class="hidden flex flex-col items-center justify-center py-20 text-gray-300"
@@ -619,7 +689,7 @@
             data-action="trash-batch-restore"
             class="cta-btn cta-soft"
           >
-            <i class="fas fa-undo-alt"></i> 批量還原
+            <i class="fas fa-undo-alt"></i><span>批量還原</span>
           </button>
           <button
             id="btn-batch-delete"
@@ -627,27 +697,30 @@
             data-action="trash-batch-delete"
             class="cta-btn cta-danger"
           >
-            <i class="fas fa-trash-alt"></i> 永久刪除
+            <i class="fas fa-trash-alt"></i><span>永久刪除</span>
           </button>
         </div>
-      </div>
+      </section>
 
-      <!-- =========================================================
-        6) Review
-      ========================================================== -->
-      <div id="page-review" class="page hidden page-review overflow-hidden">
+      <section
+        id="page-review"
+        class="page hidden page-review overflow-hidden"
+        aria-label="智能複習"
+      >
         <header class="app-header shadow-sm">
           <div class="header-content-wrapper">
             <div class="left-slot">
-              <div
+              <button
+                type="button"
                 data-page="page-home"
                 class="w-10 h-10 flex items-center justify-center rounded-xl text-gray-400 cursor-pointer active:scale-90 transition-all"
+                aria-label="返回首頁"
               >
                 <i class="fas fa-chevron-left"></i>
-              </div>
+              </button>
             </div>
             <div class="center-slot">
-              <h1 class="text-base font-black text-gray-800">智能複習</h1>
+              <h2 class="text-base font-black text-gray-800">智能複習</h2>
             </div>
             <div class="right-slot"></div>
           </div>
@@ -655,7 +728,7 @@
 
         <div class="list-bars-container bg-white border-b border-gray-100">
           <div class="rwd-content-wrapper px-6 py-3 border-b border-gray-50">
-            <div
+            <label
               class="flex items-center bg-gray-50 rounded-2xl px-3 border border-gray-100 focus-within:border-[#13B5B1] transition-all"
             >
               <i class="fas fa-search text-gray-300 text-xs"></i>
@@ -664,23 +737,28 @@
                 id="search-review"
                 placeholder="搜尋複習項目..."
                 class="bg-transparent border-none outline-none px-2 py-2 text-xs w-full font-bold text-gray-600"
+                aria-label="搜尋複習項目"
               />
-            </div>
+            </label>
           </div>
           <div
             class="rwd-content-wrapper px-6 py-2 flex items-center justify-between bg-white/95 backdrop-blur-sm"
           >
             <div class="flex gap-4">
-              <span
+              <button
+                type="button"
                 data-filter="all"
                 class="text-xs font-black text-[#13B5B1] cursor-pointer border-b-2 border-[#13B5B1] pb-1"
-                >全部</span
               >
-              <span
+                全部
+              </button>
+              <button
+                type="button"
                 data-filter="fav"
                 class="text-xs font-black text-gray-300 cursor-pointer pb-1"
-                >★ 收藏</span
               >
+                ★ 收藏
+              </button>
             </div>
             <div class="flex items-center gap-3">
               <button
@@ -690,20 +768,26 @@
               >
                 一鍵全選
               </button>
-
               <div class="relative flex items-center">
-                <i
-                  class="fas fa-calendar-day text-gray-300 text-sm cursor-pointer hover:text-[#13B5B1] transition-colors"
+                <button
+                  type="button"
                   data-action="open-date-picker-review"
-                ></i>
+                  class="text-gray-300 text-sm hover:text-[#13B5B1] transition-colors"
+                  aria-label="開啟複習日期篩選"
+                >
+                  <i class="fas fa-calendar-day"></i>
+                </button>
                 <input
                   type="date"
                   id="date-filter-review"
                   class="absolute opacity-0 w-0 h-0 pointer-events-none"
+                  tabindex="-1"
+                  aria-hidden="true"
                 />
               </div>
               <div id="category-filter-review"></div>
               <button
+                type="button"
                 id="clear-date-review"
                 data-action="clear-date"
                 class="hidden text-[10px] font-black text-red-400 bg-red-50 px-2 py-1 rounded-lg"
@@ -723,6 +807,7 @@
                 請挑選欲複習的筆記
               </p>
             </div>
+
             <div id="srs-review-section" class="mb-10 hidden animate-fadeIn">
               <div class="flex items-center justify-between mb-4 ml-1">
                 <div class="flex items-center gap-2">
@@ -748,6 +833,7 @@
               </div>
 
               <button
+                type="button"
                 data-action="start-srs-quiz"
                 class="w-full py-5 bg-white border-2 border-orange-100 rounded-[2.2rem] flex items-center justify-between px-6 active:scale-95 transition-all shadow-sm group"
               >
@@ -781,30 +867,30 @@
             data-action="run-smart-quiz"
             class="cta-btn cta-primary"
           >
-            <i class="fas fa-bolt"></i> 開始挑戰
+            <i class="fas fa-bolt"></i><span>開始挑戰</span>
           </button>
         </div>
-      </div>
+      </section>
 
-      <!-- =========================================================
-        7) Settings
-      ========================================================== -->
-      <div
+      <section
         id="page-settings"
         class="page hidden page-settings overflow-hidden bg-[#F8FAFA]"
+        aria-label="個人設定"
       >
         <header class="app-header shadow-sm">
           <div class="header-content-wrapper">
             <div class="left-slot">
-              <div
+              <button
+                type="button"
                 data-page="page-home"
                 class="w-10 h-10 flex items-center justify-center rounded-xl text-gray-400 cursor-pointer"
+                aria-label="返回首頁"
               >
                 <i class="fas fa-chevron-left"></i>
-              </div>
+              </button>
             </div>
             <div class="center-slot">
-              <h1 class="text-base font-black text-gray-800">個人設定</h1>
+              <h2 class="text-base font-black text-gray-800">個人設定</h2>
             </div>
             <div class="right-slot"></div>
           </div>
@@ -835,6 +921,7 @@
               >
                 <div>
                   <label
+                    for="settings-nickname"
                     class="text-[10px] font-black text-gray-400 uppercase ml-1"
                     >您的暱稱</label
                   >
@@ -847,10 +934,11 @@
                 </div>
 
                 <div>
-                  <label
+                  <p
                     class="text-[10px] font-black text-gray-400 uppercase ml-1 mb-3 block"
-                    >個人頭貼</label
                   >
+                    個人頭貼
+                  </p>
                   <div
                     class="flex items-center gap-4 bg-gray-50 p-3 rounded-2xl border border-gray-100/50"
                   >
@@ -861,7 +949,7 @@
                       <img
                         src=""
                         class="w-full h-full object-contain"
-                        alt="Avatar Preview"
+                        alt="頭貼預覽"
                       />
                     </div>
                     <div class="flex flex-col gap-1">
@@ -873,7 +961,7 @@
                         data-action="open-avatar-modal"
                         class="text-xs font-black text-[#13B5B1] flex items-center gap-1 hover:opacity-70 transition-all active:scale-95"
                       >
-                        <i class="fas fa-edit"></i> 修改頭貼
+                        <i class="fas fa-edit"></i><span>修改頭貼</span>
                       </button>
                     </div>
                   </div>
@@ -887,21 +975,24 @@
               >
                 資料管理
               </p>
-
               <div class="space-y-3">
                 <button
+                  type="button"
                   data-action="clear-quiz-history"
                   class="w-full py-4 bg-orange-50 text-orange-500 rounded-2xl text-xs font-black active:scale-95 mb-3"
                 >
-                  <i class="fas fa-undo-alt mr-2"></i> 重置學習成效數據
+                  <i class="fas fa-undo-alt mr-2"></i
+                  ><span>重置學習成效數據</span>
                 </button>
                 <button
+                  type="button"
                   data-action="export-data"
                   class="w-full py-4 bg-white border border-gray-100 text-gray-600 rounded-2xl text-xs font-black shadow-sm active:scale-95"
                 >
                   匯出筆記 JSON 備份
                 </button>
                 <button
+                  type="button"
                   data-action="clear-all-data"
                   class="w-full py-4 bg-red-50 text-red-500 rounded-2xl text-xs font-black active:scale-95"
                 >
@@ -913,20 +1004,25 @@
         </div>
 
         <div class="settings-cta">
-          <button data-action="save-settings" class="cta-btn cta-primary">
+          <button
+            type="button"
+            data-action="save-settings"
+            class="cta-btn cta-primary"
+          >
             儲存個人化設定
           </button>
         </div>
-      </div>
+      </section>
 
-      <!-- =========================================================
-        AI Modal
-      ========================================================== -->
-      <div id="ai-modal">
+      <div id="ai-modal" aria-hidden="true">
         <div
           class="bg-white w-full max-h-[70%] rounded-[2.5rem] p-6 shadow-2xl flex flex-col relative"
+          role="dialog"
+          aria-modal="true"
+          aria-label="AI 操作視窗"
         >
           <button
+            type="button"
             data-action="modal-close"
             class="absolute top-6 right-6 text-gray-300"
             aria-label="關閉"
@@ -940,60 +1036,65 @@
         </div>
       </div>
 
-      <!-- =========================================================
-        Main Navigation
-      ========================================================== -->
-      <div
+      <nav
         id="main-nav"
         class="bg-white border-t border-gray-100 flex justify-around py-6 px-6 z-40 shadow-[0_-10px_30px_rgba(0,0,0,0.03)]"
+        aria-label="主導覽"
       >
-        <div
+        <button
+          type="button"
           data-page="page-home"
           id="nav-home"
           class="nav-item-active cursor-pointer"
-          role="button"
+          aria-label="首頁"
         >
           <i class="fas fa-home text-2xl"></i>
-        </div>
-        <div
+        </button>
+        <button
+          type="button"
           data-page="page-list"
           id="nav-notes"
           class="nav-item-inactive cursor-pointer"
-          role="button"
+          aria-label="課堂筆記"
         >
           <i class="fas fa-book text-2xl"></i>
-        </div>
-        <div
+        </button>
+        <button
+          type="button"
           data-page="page-review"
           id="nav-review"
           class="nav-item-inactive cursor-pointer"
-          role="button"
+          aria-label="智能複習"
         >
           <i class="fas fa-graduation-cap text-2xl"></i>
-        </div>
-        <div
+        </button>
+        <button
+          type="button"
           data-page="page-trash"
           id="nav-trash"
           class="nav-item-inactive cursor-pointer"
-          role="button"
+          aria-label="回收站"
         >
           <i class="fas fa-trash text-2xl"></i>
-        </div>
-        <div
+        </button>
+        <button
+          type="button"
           data-page="page-settings"
           id="nav-settings"
           class="nav-item-inactive cursor-pointer"
-          role="button"
+          aria-label="個人設定"
         >
           <i class="fas fa-cog text-2xl"></i>
-        </div>
-      </div>
+        </button>
+      </nav>
 
-      <!-- =========================================================
-        Confirm Modal
-      ========================================================== -->
-      <div id="confirm-modal">
-        <div class="bg-white w-[80%] rounded-3xl p-6 shadow-2xl text-center">
+      <div id="confirm-modal" aria-hidden="true">
+        <div
+          class="bg-white w-[80%] rounded-3xl p-6 shadow-2xl text-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="刪除確認"
+        >
           <div
             class="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl"
           >
@@ -1002,12 +1103,14 @@
           <h3 class="font-black text-lg mb-2 text-gray-800">確定要刪除嗎？</h3>
           <div class="flex gap-3">
             <button
+              type="button"
               data-action="confirm-cancel"
               class="flex-1 py-3 bg-gray-100 text-gray-500 rounded-2xl font-bold text-xs"
             >
               取消
             </button>
             <button
+              type="button"
               id="btn-real-delete"
               class="flex-1 py-3 bg-red-500 text-white rounded-2xl font-bold text-xs"
             >

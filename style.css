@@ -11,28 +11,53 @@
 
   --nav-h: 96px;
   --app-header-h: 64px;
-
-  /* ✅ 桌機置中寬度加寬 */
   --content-max: 1440px;
-
   --content-pad: 24px;
-
-  /* 底部固定 CTA 區高度估算，用來給 scroll area 預留空間 */
   --cta-h: 88px;
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  padding: 0;
+}
+
+body {
   background: #f3f4f6;
   overflow-x: hidden;
   font-family: "Noto Sans TC", sans-serif !important;
+  color: var(--text-dark);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  background: none;
+  padding: 0;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+.hidden {
+  display: none !important;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -43,17 +68,13 @@ body {
   scrollbar-width: none;
 }
 
-.hidden {
-  display: none !important;
-}
-
 /* =========================================================
    1) App Shell & Page
    ========================================================= */
 .phone-container {
   width: 100vw;
   height: 100dvh;
-  background: white;
+  background: #fff;
   position: relative;
   overflow: hidden;
   display: flex;
@@ -68,7 +89,6 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--bg-page);
-
   opacity: 0;
   transform: translateY(12px);
   transition:
@@ -76,22 +96,13 @@ body {
     transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
 }
+
 .page.active {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
 }
 
-.cta-btn:active,
-.home-grid-card:active,
-.quiz-option:active {
-  transform: scale(0.96) !important;
-}
-
-.nav-item-active {
-  transform: scale(1.1);
-  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
 /* =========================================================
    2) Bottom Navigation
    ========================================================= */
@@ -101,34 +112,40 @@ body {
   left: 0;
   right: 0;
   z-index: 40;
-  background: white;
+  background: #fff;
   border-top: 1px solid rgba(0, 0, 0, 0.04);
   padding-bottom: calc(var(--safe-bottom) + 12px) !important;
 }
 
+.nav-item-active,
+.nav-item-inactive {
+  transition:
+    color 0.2s ease,
+    transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
 .nav-item-active {
   color: var(--brand-color);
+  transform: scale(1.1);
 }
+
 .nav-item-inactive {
   color: #d1d5db;
 }
 
 /* =========================================================
-   3) Standardized Header (三段式標頭)
+   3) Header
    ========================================================= */
 .app-header {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: white;
+  background: #fff;
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
-
   height: calc(var(--safe-top) + var(--app-header-h));
   padding-top: var(--safe-top);
-
   padding-left: var(--content-pad);
   padding-right: var(--content-pad);
-
   display: flex;
   align-items: center;
   justify-content: center;
@@ -156,12 +173,12 @@ body {
 
 .center-slot {
   flex: 1;
+  min-width: 0;
+  padding: 0 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
-  min-width: 0;
-  padding: 0 4px;
 }
 
 .page-title {
@@ -172,14 +189,15 @@ body {
 }
 
 .app-header .right-slot div img {
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
 .app-header .right-slot div:hover img {
   transform: rotate(10deg) scale(1.1);
 }
 
 /* =========================================================
-   4) Scroll Areas (預留底部 fixed 區塊空間，避免被蓋住)
+   4) Scroll Areas
    ========================================================= */
 .home-scroll,
 .list-scroll,
@@ -192,7 +210,7 @@ body {
 }
 
 /* =========================================================
-   5) Fixed Components (CTA / Assistant)
+   5) Fixed Components
    ========================================================= */
 .home-cta,
 .review-cta,
@@ -204,7 +222,7 @@ body {
   right: 0;
   z-index: 35;
   bottom: calc(var(--nav-h) + var(--safe-bottom));
-  background: white;
+  background: #fff;
   padding: 16px 24px;
   border-top: 1px solid rgba(0, 0, 0, 0.03);
 }
@@ -214,6 +232,7 @@ body {
   border-top: none;
   pointer-events: none;
 }
+
 .list-assistant-fixed > * {
   pointer-events: auto;
 }
@@ -225,7 +244,7 @@ body {
 }
 
 /* =========================================================
-   5.1) Unified CTA Button System（底部大按鈕統一）
+   5.1) CTA Button System
    ========================================================= */
 .cta-btn {
   width: 100%;
@@ -233,8 +252,6 @@ body {
   border-radius: 2.5rem;
   font-weight: 900;
   font-size: 14px;
-  border: 0;
-  outline: none;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -248,18 +265,18 @@ body {
 }
 
 .cta-btn:active {
-  transform: scale(0.98);
+  transform: scale(0.96);
 }
 
 .cta-btn:disabled {
   cursor: not-allowed;
   opacity: 0.55;
-  transform: none;
+  transform: none !important;
 }
 
 .cta-primary {
   background: var(--brand-color);
-  color: white;
+  color: #fff;
   box-shadow: 0 18px 35px rgba(19, 181, 177, 0.18);
 }
 
@@ -271,35 +288,33 @@ body {
 
 .cta-danger {
   background: #ef4444;
-  color: white;
+  color: #fff;
   box-shadow: 0 18px 35px rgba(239, 68, 68, 0.18);
 }
 
 /* =========================================================
-   6) RWD 核心策略 (桌機版置中)
+   6) RWD
    ========================================================= */
 @media (min-width: 900px) {
-  /* 首頁卡片 4 欄 */
   #page-home .grid.grid-cols-2 {
     grid-template-columns: repeat(4, 1fr) !important;
   }
+
   .home-grid-card {
     aspect-ratio: 4 / 3;
   }
 
-  /* 滾動內容容器置中 */
   .rwd-content-wrapper,
   .home-content,
   .list-scroll > div,
   .review-scroll > div,
   #trash-container {
+    width: 100% !important;
     max-width: var(--content-max) !important;
     margin-left: auto !important;
     margin-right: auto !important;
-    width: 100% !important;
   }
 
-  /* 固定定位元素：桌機置中 */
   #main-nav,
   .home-cta,
   .review-cta,
@@ -317,21 +332,27 @@ body {
    7) UI Components
    ========================================================= */
 .home-grid-card {
-  background: white;
+  background: #fff;
+  border: 1px solid #f3f4f6;
   border-radius: 2.2rem;
+  aspect-ratio: 1 / 1;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.02);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 1px solid #f3f4f6;
-  aspect-ratio: 1 / 1;
-  cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.02);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.home-grid-card:active {
+  transform: scale(0.96);
 }
 
 .home-grid-card h4 {
-  margin: 0 0 4px 0;
+  margin: 0 0 4px;
   font-weight: 900;
   font-size: 1rem;
   color: #111827;
@@ -347,13 +368,15 @@ body {
 
 .wave-bar {
   width: 4px;
+  height: 12px;
   background: var(--brand-color);
   border-radius: 10px;
-  height: 12px;
 }
+
 .recording-active .wave-bar {
   animation: wave-animation 1.2s infinite;
 }
+
 @keyframes wave-animation {
   0%,
   100% {
@@ -365,32 +388,32 @@ body {
 }
 
 .active-date {
-  background: white;
-  border: 2px solid var(--brand-color);
-  color: var(--brand-color);
   width: 50px;
   padding: 12px 10px;
+  background: #fff;
+  border: 2px solid var(--brand-color);
   border-radius: 18px;
+  color: var(--brand-color);
   text-align: center;
   box-shadow: 0 4px 10px rgba(19, 181, 177, 0.1);
 }
 
 .deleted-date {
-  background: #f9fafb;
-  border: 2px solid #d1d5db;
-  color: #9ca3af;
   width: 50px;
   padding: 12px 10px;
+  background: #f9fafb;
+  border: 2px solid #d1d5db;
   border-radius: 18px;
+  color: #9ca3af;
   text-align: center;
 }
 
 #ai-modal,
 #confirm-modal {
-  z-index: 100;
-  display: none;
   position: fixed;
   inset: 0;
+  z-index: 100;
+  display: none;
   align-items: center;
   justify-content: center;
   padding: 24px;
@@ -403,18 +426,19 @@ body {
 }
 
 .quiz-option {
-  display: block;
   width: 100%;
+  display: block;
   text-align: left;
   padding: 14px 16px;
-  border-radius: 16px;
   border: 1px solid #f3f4f6;
+  border-radius: 16px;
   background: #fff;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.35;
   white-space: normal;
   word-break: break-word;
+  cursor: pointer;
   transition:
     transform 0.15s ease,
     background-color 0.15s ease,
@@ -422,7 +446,7 @@ body {
 }
 
 .quiz-option:active {
-  transform: scale(0.99);
+  transform: scale(0.96);
 }
 
 .quiz-option:disabled {
@@ -450,7 +474,6 @@ body {
   transform: scale(0.9);
 }
 
-/* Sticky 篩選列：safe-top + header height */
 .list-bars-container {
   position: sticky;
   top: calc(var(--safe-top) + var(--app-header-h));
@@ -480,7 +503,7 @@ body {
   width: 0;
   flex: 1;
   min-height: fit-content;
-  background: white;
+  background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.05);
   border-radius: 2.2rem;
   padding: 20px;
@@ -488,6 +511,7 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
   display: flex;
   flex-direction: column;
+  transition: transform 0.2s ease;
 }
 
 .note-card-main:active {
@@ -495,15 +519,56 @@ body {
 }
 
 .card-intro-text {
+  margin-bottom: 12px;
   font-size: 11px;
-  color: #9ca3af;
   font-weight: 500;
   line-height: 1.6;
-  margin-bottom: 12px;
+  color: #9ca3af;
   font-style: normal !important;
 }
 
-/* style.css */
+.note-highlight {
+  background: #fff;
+  border: 1px solid rgba(19, 181, 177, 0.08);
+  border-radius: 1.6rem;
+  padding: 18px 18px 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+  margin-bottom: 14px;
+}
+
+.timeline-container {
+  position: relative;
+}
+
+.timeline-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 10px;
+  width: 2px;
+  background: linear-gradient(to bottom, #13b5b1 0%, #e5e7eb 25%, #e5e7eb 100%);
+}
+
+.timeline-dot {
+  position: absolute;
+  left: 1px;
+  top: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid #d1d5db;
+  box-shadow: 0 0 0 4px #fff;
+}
+
+.timeline-dot.active {
+  border-color: var(--brand-color);
+  background: #e6fffb;
+}
+
+/* =========================================================
+   9) Animations
+   ========================================================= */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -514,6 +579,7 @@ body {
     transform: translateY(0);
   }
 }
+
 .animate-fadeIn {
   animation: fadeIn 0.5s ease-out forwards;
 }

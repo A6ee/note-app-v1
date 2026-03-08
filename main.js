@@ -13,12 +13,10 @@ let activeListTab = "note";
 let currentSessionScore = { correct: 0, total: 0 };
 // env
 // 改到api/gemini.js中串接api key
-//const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-let selectedTrashNotes = new Set();
+//let selectedTrashNotes = new Set();
 let selectedReviewNotes = new Set();
 
 let lastActivePageId = "page-home";
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 let timerInterval;
 let seconds = 0;
@@ -1727,6 +1725,9 @@ async function exportToPDF() {
   showModal("✨ 皮皮正在為您裝訂 PDF...");
 
   try {
+    if (typeof html2pdf !== "function") {
+      throw new Error("html2pdf is not loaded");
+    }
     await html2pdf().set(opt).from(element).save();
     closeModal();
   } catch (err) {
@@ -2461,6 +2462,34 @@ Object.assign(window, {
       case "save-settings":
         saveSettingsFromUI();
         break;
+
+      case "export-data": {
+        const backup = {
+          exportedAt: new Date().toISOString(),
+          app: "認知破壞終結者 3.0",
+          notes: notesLibrary,
+          settings: appSettings,
+          quizHistory,
+          wrongQuestions,
+        };
+
+        const blob = new Blob([JSON.stringify(backup, null, 2)], {
+          type: "application/json;charset=utf-8",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const stamp = new Date()
+          .toISOString()
+          .slice(0, 19)
+          .replace(/[T:]/g, "-");
+        a.download = `president-backup-${stamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        break;
+      }
 
       case "clear-all-data":
         if (confirm("清除？")) {
