@@ -114,7 +114,7 @@ let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
       },
       {
         time: "09:00",
-        text: "所以皮皮建議，教學者要先建立溫暖的環境，這就是滿足基礎需求的過程。",
+        text: "所以Memo助手建議，教學者要先建立溫暖的環境，這就是滿足基礎需求的過程。",
       },
       {
         time: "11:30",
@@ -339,7 +339,7 @@ let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
       },
       {
         time: "10:50",
-        text: "這就是為什麼皮皮強調要分段錄音、分段整理的原因，這符合訊息處理的心理規則。",
+        text: "這就是為什麼Memo助手強調要分段錄音、分段整理的原因，這符合訊息處理的心理規則。",
       },
     ],
     isFavorite: false,
@@ -350,7 +350,7 @@ let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
 let currentNoteData = notesLibrary?.[0] || null;
 
 let appSettings = JSON.parse(localStorage.getItem("president_settings")) || {
-  nickname: "皮皮",
+  nickname: "同學",
   avatarSeed: "Fox",
   noteStyle: "standard",
 };
@@ -487,12 +487,12 @@ function loadSettingsToUI() {
 }
 
 function saveSettingsFromUI() {
-  appSettings.nickname = safeEl("settings-nickname")?.value || "皮皮";
+  appSettings.nickname = safeEl("settings-nickname")?.value || "Memo";
   appSettings.avatarSeed = tempSelectedAvatar;
 
   localStorage.setItem("president_settings", JSON.stringify(appSettings));
   updateHomeGreeting();
-  alert("皮皮，您的個人檔案已同步更新 ✨");
+  alert("您的個人檔案已同步更新 ✨");
   window.navigateTo("page-home");
 }
 
@@ -550,7 +550,7 @@ function initRecognition() {
 
     localStorage.setItem("temp_transcript", finalDisplay || "");
     const el = safeEl("live-transcript");
-    if (el) el.innerText = finalDisplay || "皮皮正在聽課...";
+    if (el) el.innerText = finalDisplay || "Memo助手正在聽課...";
   };
 
   recognition.onend = () => {
@@ -575,7 +575,7 @@ function startRecordPage() {
   const timerEl = safeEl("record-timer");
   const liveEl = safeEl("live-transcript");
   if (timerEl) timerEl.innerText = "00:00";
-  if (liveEl) liveEl.innerText = "皮皮正在聽課...";
+  if (liveEl) liveEl.innerText = "Memo助手正在聽課...";
 
   window.navigateTo("page-record");
 
@@ -614,7 +614,7 @@ async function stopRecording() {
   const durationText = safeEl("record-timer")?.innerText || "00:00";
   window.navigateTo("page-loading");
 
-  const prompt = `你是一位專業筆記助手「皮皮」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。逐字稿：${
+  const prompt = `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。逐字稿：${
     fullTranscript + lastInterim || "模擬內容"
   }`;
 
@@ -1396,7 +1396,7 @@ function showQuizResult() {
       ? "太強了！這份筆記你已經完全精通 ✨"
       : accuracy >= 50
         ? "做得好！再複習一下弱點就完美了 💪"
-        : "別灰心，皮皮陪你再看一次筆記 🍎";
+        : "別灰心，Memo助手陪你再看一次筆記 🍎";
 
   content.innerHTML = `
     <div class="text-center py-6 animate-fadeIn">
@@ -1564,12 +1564,12 @@ async function generateCustomQuiz(count, type, isReviewMode = false) {
           `標題: ${n.title}\n內容摘要: ${n.intro}\n詳細重點: ${JSON.stringify(n.sections)}`,
       )
       .join("\n\n---\n\n");
-    loadingMsg = `✨ 皮皮正在整合 ${notesToReview.length} 份筆記，產出 ${count} 題跨領域挑戰...`;
+    loadingMsg = `✨ Memo助手正在整合 ${notesToReview.length} 份筆記，產出 ${count} 題跨領域挑戰...`;
   } else {
     // 單篇筆記模式
     if (!currentNoteData) return;
     contentData = `標題: ${currentNoteData.title}\n內容: ${JSON.stringify(currentNoteData.sections)}`;
-    loadingMsg = `✨ 皮皮正在針對本篇筆記，精選 ${count} 題考題...`;
+    loadingMsg = `✨ Memo助手正在針對本篇筆記，精選 ${count} 題考題...`;
   }
 
   showModal(loadingMsg);
@@ -1636,7 +1636,7 @@ ${contentData}`;
     safeEl("modal-content").innerHTML = `
       <div class="text-center py-10">
         <i class="fas fa-exclamation-triangle text-orange-400 text-3xl mb-4"></i>
-        <p class="text-sm font-black text-gray-500">哎呀！皮皮斷線了，請再試一次。</p>
+        <p class="text-sm font-black text-gray-500">哎呀！Memo助手斷線了，請再試一次。</p>
         <button type="button" onclick="closeModal()" class="mt-4 text-xs text-[#13B5B1] font-black underline">關閉視窗</button>
       </div>
     `;
@@ -1687,7 +1687,7 @@ function renderQuizUI(result, type, count) {
 async function expandContent() {
   if (!currentNoteData) return;
 
-  showModal("✨ 皮皮正在查閱知識庫...");
+  showModal("✨ Memo助手正在查閱知識庫...");
   const prompt = `針對主題「${currentNoteData.title}」提供 3 個延伸學習建議。請用繁體中文。`;
 
   try {
@@ -1695,7 +1695,7 @@ async function expandContent() {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     safeEl("modal-content").innerHTML = `
       <div class="text-left">
-        <h3 class="text-lg font-black mb-4 text-[#13B5B1]">📚 皮皮的延伸筆記</h3>
+        <h3 class="text-lg font-black mb-4 text-[#13B5B1]">📚 Memo助手的延伸筆記</h3>
         <div class="text-sm leading-relaxed text-gray-600 whitespace-pre-wrap">${String(
           text,
         )
@@ -1722,7 +1722,7 @@ async function exportToPDF() {
     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
   };
 
-  showModal("✨ 皮皮正在為您裝訂 PDF...");
+  showModal("✨ Memo助手正在為您裝訂 PDF...");
 
   try {
     if (typeof html2pdf !== "function") {
@@ -1753,7 +1753,7 @@ async function startSmartReviewQuiz() {
     })
     .join("\n\n---\n\n");
 
-  showModal("✨ 皮皮正在進行出題...");
+  showModal("✨ Memo助手正在進行出題...");
 
   const prompt = `你是一位嚴謹的教授「認知破壞終結者」。請針對以下提供的多篇筆記內容，出一份具備「深度聯繫」的 5 題單選題測驗。
 題目必須包含：
@@ -1827,7 +1827,7 @@ function renderLearningDashboard() {
   if (!container) return;
 
   if (quizHistory.length === 0) {
-    container.innerHTML = `<p class="text-xs text-gray-400 text-center py-8 font-bold">✨ 開始您的第一次測驗，<br>皮皮將為您生成數據報告！</p>`;
+    container.innerHTML = `<p class="text-xs text-gray-400 text-center py-8 font-bold">✨ 開始您的第一次測驗，<br>Memo助手將為您生成數據報告！</p>`;
     return;
   }
 
