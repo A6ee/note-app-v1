@@ -377,24 +377,16 @@ let tempSelectedAvatar = appSettings.avatarSeed;
  * 1) Utils（小工具）
  * =========================================================
  */
-// main.js
 
-/**
- * 🚀 自動調整標題字體大小
- */
 function adjustTitleFontSize() {
   const titleEl = safeEl("content-title");
   if (!titleEl) return;
 
-  // 1. 先重置為基礎大小，以便重新計算
   titleEl.style.fontSize = "14px";
 
-  // 2. 設定縮放參數
   let currentSize = 14;
-  const minSize = 10; // 最低字體限制，避免字太小看不見
+  const minSize = 10;
 
-  // 3. 核心偵測邏輯：當內容寬度大於容器寬度時，持續縮小字體
-  // 增加迴圈檢查，直到寬度符合或達到最小值為止
   while (titleEl.scrollWidth > titleEl.offsetWidth && currentSize > minSize) {
     currentSize -= 0.5;
     titleEl.style.fontSize = `${currentSize}px`;
@@ -520,10 +512,9 @@ function markNoteDeleted(noteId) {
  * =========================================================
  */
 
-// main.js
 function initRecognition() {
   if (!("webkitSpeechRecognition" in window)) {
-    console.warn("此瀏覽器不支援語音辨識");
+    console.warn("This browser does not support webkitSpeechRecognition.");
     return;
   }
 
@@ -536,35 +527,67 @@ function initRecognition() {
     let interim = "";
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       const piece = event.results[i][0]?.transcript || "";
-      if (event.results[i].isFinal) {
-        if (!fullTranscript.endsWith(piece.trim())) {
-          fullTranscript += piece;
-        }
-      } else {
-        interim += piece;
-      }
+      if (event.results[i].isFinal) fullTranscript += piece;
+      else interim += piece;
     }
 
     lastInterim = interim;
-    const finalDisplay = (fullTranscript + interim).trim();
+    localStorage.setItem("temp_transcript", fullTranscript + interim || "");
 
-    localStorage.setItem("temp_transcript", finalDisplay || "");
     const el = safeEl("live-transcript");
-    if (el) el.innerText = finalDisplay || "Memo助手正在聽課...";
+    if (el) el.innerText = fullTranscript + interim || "正在聽課中...";
   };
 
   recognition.onend = () => {
     if (!isRecording) return;
-
     if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
     recognitionRestartTimer = setTimeout(() => {
       try {
         recognition.start();
         recognitionEndFailCount = 0;
       } catch (e) {}
-    }, 400); // 縮短重啟延遲
+    }, 600);
   };
 }
+recognition = new window.webkitSpeechRecognition();
+recognition.continuous = true;
+recognition.interimResults = true;
+recognition.lang = "zh-TW";
+
+recognition.onresult = (event) => {
+  let finalCombined = "";
+  let interimCombined = "";
+
+  for (let i = 0; i < event.results.length; ++i) {
+    if (event.results[i].isFinal) {
+      finalCombined += event.results[i][0].transcript;
+    } else {
+      interimCombined += event.results[i][0].transcript;
+    }
+  }
+
+  fullTranscript = finalCombined;
+  lastInterim = interimCombined;
+
+  const displayResult = (finalCombined + interimCombined).trim();
+
+  const el = safeEl("live-transcript");
+  if (el) {
+    el.innerText = displayResult || "Memo助手正在聽課...";
+  }
+
+  localStorage.setItem("temp_transcript", displayResult);
+};
+
+recognition.onend = () => {
+  if (!isRecording) return;
+  if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
+  recognitionRestartTimer = setTimeout(() => {
+    try {
+      recognition.start();
+    } catch (e) {}
+  }, 500);
+};
 
 function startRecordPage() {
   fullTranscript = "";
@@ -575,7 +598,7 @@ function startRecordPage() {
   const timerEl = safeEl("record-timer");
   const liveEl = safeEl("live-transcript");
   if (timerEl) timerEl.innerText = "00:00";
-  if (liveEl) liveEl.innerText = "Memo助手正在聽課...";
+  if (liveEl) liveEl.innerText = "正在聽課中...";
 
   window.navigateTo("page-record");
 
@@ -609,7 +632,8 @@ async function stopRecording() {
   if (recognition) recognition.stop();
   clearInterval(timerInterval);
 
-  localStorage.setItem("temp_transcript", fullTranscript + lastInterim || "");
+  const finalTranscript = (fullTranscript + lastInterim).trim();
+  localStorage.setItem("temp_transcript", finalTranscript || "");
 
   const durationText = safeEl("record-timer")?.innerText || "00:00";
   window.navigateTo("page-loading");
@@ -683,7 +707,6 @@ async function stopRecording() {
  * =========================================================
  */
 
-// 改為呼叫中間層api/gemini.js
 async function callGemini(prompt, responseSchema = null, retryCount = 0) {
   try {
     const response = await fetch("/api/gemini", {
@@ -1316,13 +1339,11 @@ function permanentClearAll() {
 /**
  * Quiz / Expand / Export
  */
-// main.js
 function checkAnswer(btn, selected, correct) {
   const allBtns = btn.parentElement.querySelectorAll("button");
   const corrIdx = Number(correct);
   const isCorrect = Number(selected) === corrIdx;
 
-  // 1. 紀錄到長期看板（原有功能）
   saveQuizRecord({
     noteId: currentNoteData?.id || "smart-review",
     category: currentNoteData?.category || "綜合複習",
@@ -1330,22 +1351,17 @@ function checkAnswer(btn, selected, correct) {
     isCorrect: isCorrect,
   });
 
-  // 2. 累計本次測驗分數（原有功能）
   currentSessionScore.total++;
   if (isCorrect) currentSessionScore.correct++;
 
-  // 🚀 3. 新增：艾賓浩斯錯題重測邏輯
-  // 透過 DOM 找到該題目文字（並過濾掉前面的序號，如 "1. "）
   const questionContainer = btn.closest(".mb-8");
   const questionText = questionContainer
     .querySelector("p")
     .innerText.replace(/^\d+\.\s/, "");
 
   if (isCorrect) {
-    // 答對：如果是之前錯過的題目，就提升其記憶等級
     promoteWrongQuestion(questionText);
   } else {
-    // 答錯：將題目、選項與正確答案存入錯題庫，並啟動艾賓浩斯排程
     const options = Array.from(
       questionContainer.querySelectorAll("button.quiz-option"),
     ).map((b) => b.innerText);
@@ -1360,7 +1376,6 @@ function checkAnswer(btn, selected, correct) {
     );
   }
 
-  // 4. UI 顯示對錯（原有功能）
   if (isCorrect) {
     btn.classList.add("quiz-correct");
     btn.innerHTML += " ✅";
@@ -1373,7 +1388,6 @@ function checkAnswer(btn, selected, correct) {
 
   allBtns.forEach((b) => (b.disabled = true));
 
-  // 5. 檢查是否全部答完（原有功能）
   const totalBtns = document.querySelectorAll(
     'button[data-action="quiz-answer"]',
   ).length;
@@ -1425,7 +1439,6 @@ function showQuizResult() {
     </div>
   `;
 }
-// 修改 main.js 中的 openQuizSettings
 
 // --- 整合後的測驗設定邏輯 ---
 
@@ -1441,7 +1454,6 @@ function openQuizSettings(isReviewMode = false) {
   const content = safeEl("modal-content");
   if (!modal || !content) return;
 
-  // 如果是複習模式，檢查是否有選取筆記
   if (isReviewMode && selectedReviewNotes.size === 0) {
     alert("總裁，請先挑選至少一份筆記再開始挑戰喔！✨");
     return;
@@ -1498,15 +1510,13 @@ function openQuizSettings(isReviewMode = false) {
   `;
 
   modal.style.display = "flex";
-  bindQuizSettingsEvents(isReviewMode); // 傳遞模式給事件綁定
+  bindQuizSettingsEvents(isReviewMode);
 }
 
 function bindQuizSettingsEvents(isReviewMode) {
-  // 重置預設值
   selectedQuizCount = 3;
   selectedQuizType = "mc";
 
-  // 處理題數切換邏輯
   document.querySelectorAll("[data-quiz-count]").forEach((btn) => {
     btn.onclick = () => {
       selectedQuizCount = parseInt(btn.dataset.quizCount);
@@ -1519,7 +1529,6 @@ function bindQuizSettingsEvents(isReviewMode) {
     };
   });
 
-  // 處理題型切換邏輯
   document.querySelectorAll("[data-quiz-type]").forEach((btn) => {
     btn.onclick = () => {
       selectedQuizType = btn.dataset.quizType;
@@ -1532,7 +1541,6 @@ function bindQuizSettingsEvents(isReviewMode) {
     };
   });
 
-  // 點擊確認按鈕，帶入正確的參數呼叫 API
   safeEl("start-custom-quiz").onclick = () => {
     generateCustomQuiz(selectedQuizCount, selectedQuizType, isReviewMode);
   };
@@ -1547,7 +1555,7 @@ function bindQuizSettingsEvents(isReviewMode) {
 async function generateCustomQuiz(count, type, isReviewMode = false) {
   let contentData = "";
   let loadingMsg = "";
-  currentSessionScore = { correct: 0, total: 0 }; // 🚀 每次新測驗都要歸零！
+  currentSessionScore = { correct: 0, total: 0 };
   // 1. 決定資料來源
   if (isReviewMode) {
     // 智能複習模式：整合所有選取的筆記內容
@@ -1643,7 +1651,6 @@ ${contentData}`;
   }
 }
 
-// 新增渲染函數
 function renderQuizUI(result, type, count) {
   let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 認知挑戰：${type === "fib" ? "填空測驗" : "智能小考"}</h3>`;
 
@@ -1654,7 +1661,6 @@ function renderQuizUI(result, type, count) {
         <div class="space-y-3">`;
 
     if (type === "fib") {
-      // 填空題渲染：輸入框 + 確認按鈕
       html += `
         <div class="flex gap-2">
           <input type="text" id="fib-input-${qIdx}" placeholder="請輸入答案..."
@@ -1667,7 +1673,6 @@ function renderQuizUI(result, type, count) {
         <div id="fib-feedback-${qIdx}" class="hidden mt-2 text-[10px] font-black"></div>
       `;
     } else {
-      // 單選/是非題渲染：原本的按鈕模式
       html += (q.options || [])
         .map(
           (opt, oIdx) => `
@@ -1835,7 +1840,6 @@ function renderLearningDashboard() {
   const correct = quizHistory.filter((h) => h.isCorrect).length;
   const accuracy = Math.round((correct / total) * 100);
 
-  // 決定主顏色
   const themeColor =
     accuracy >= 80 ? "#10b981" : accuracy >= 60 ? "#13B5B1" : "#f59e0b";
 
@@ -1905,11 +1909,10 @@ function addToWrongQuestions(qObj, type) {
       options: qObj.options || [],
       answer: qObj.answer,
       type: type,
-      level: 1, // 第一次答錯從 Level 1 開始
+      level: 1,
       nextReviewTime: Date.now() + EB_INTERVALS[1],
     });
   } else {
-    // 若再次答錯，重置複習時間
     wrongQuestions[existingIdx].level = 1;
     wrongQuestions[existingIdx].nextReviewTime = Date.now() + EB_INTERVALS[1];
   }
@@ -1924,7 +1927,7 @@ function promoteWrongQuestion(qText) {
   q.level++;
 
   if (q.level >= EB_INTERVALS.length) {
-    wrongQuestions.splice(idx, 1); // 進入長期記憶，移出清單
+    wrongQuestions.splice(idx, 1);
   } else {
     q.nextReviewTime = Date.now() + EB_INTERVALS[q.level];
   }
@@ -2036,14 +2039,11 @@ Object.assign(window, {
     currentNoteData = note;
     renderNoteUI(note);
 
-    // 🚀 新增：根據列表頁的選取狀態，決定內容頁要顯示哪一個 View
     const isTranscript = activeListTab === "transcript";
 
-    // 1. 切換顯示區塊 (使用 hidden 控制)
     safeEl("view-note")?.classList.toggle("hidden", isTranscript);
     safeEl("view-transcript")?.classList.toggle("hidden", !isTranscript);
 
-    // 2. 同步更新內容頁上方的 Tab 按鈕樣式，確保視覺統一
     const activeClass =
       "tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-xs font-black shadow-md";
     const inactiveClass =
@@ -2054,7 +2054,6 @@ Object.assign(window, {
       ? activeClass
       : inactiveClass;
 
-    // 3. 執行導覽跳轉
     window.navigateTo("page-content");
     requestAnimationFrame(adjustTitleFontSize);
   },
@@ -2114,9 +2113,8 @@ Object.assign(window, {
 
     if (el.dataset.listView) {
       const isNote = el.dataset.listView === "note";
-      activeListTab = el.dataset.listView; // 👈 關鍵：記住現在是哪個 Tab
+      activeListTab = el.dataset.listView;
 
-      // 原本的 UI 切換邏輯
       safeEl("list-tab-note").className = isNote
         ? "tab-btn flex-1 py-2.5 bg-[#13B5B1] text-white rounded-full text-[10px] font-black shadow-md"
         : "tab-btn flex-1 py-2.5 text-gray-400 rounded-full text-[10px] font-black";
@@ -2308,14 +2306,12 @@ Object.assign(window, {
         break;
 
       case "start-srs-quiz": {
-        // 篩選出今天到期的錯題
         const dueQuestions = wrongQuestions.filter(
           (q) => q.nextReviewTime <= Date.now(),
         );
         if (dueQuestions.length > 0) {
-          // 呼叫我們之前的渲染函數，並傳入題型
           renderQuizUI({ questions: dueQuestions }, "srs", dueQuestions.length);
-          // 開啟 Modal 顯示題目
+
           safeEl("ai-modal").style.display = "flex";
         }
         break;
@@ -2327,7 +2323,6 @@ Object.assign(window, {
         checkAnswer(el, selected, correct);
         break;
       }
-      // 在 main.js 的事件委派中加入
       case "check-fib": {
         const idx = el.dataset.idx;
         const correctAnswer = el.dataset.answer;
@@ -2336,7 +2331,7 @@ Object.assign(window, {
         const userInput = inputEl.value.trim().toLowerCase();
         const target = correctAnswer.trim().toLowerCase();
 
-        const isCorrect = userInput === target; // 🚀 只在這裡宣告一次！
+        const isCorrect = userInput === target;
 
         inputEl.disabled = true;
         el.disabled = true;
@@ -2376,13 +2371,10 @@ Object.assign(window, {
 
       case "clear-quiz-history": {
         if (confirm("確定要將所有測驗紀錄歸零嗎？這不會刪除您的筆記喔！✨")) {
-          // 1. 清空記憶體中的陣列
           quizHistory = [];
 
-          // 2. 移除 LocalStorage 裡的紀錄
           localStorage.removeItem("president_quiz_history");
 
-          // 3. 立即重新渲染看板
           renderLearningDashboard();
 
           alert("數據已全數歸零，準備好重新挑戰了嗎？🚀");
@@ -2597,6 +2589,6 @@ window.addEventListener("orientationchange", syncLayoutHeights);
 if (window.visualViewport) {
   window.addEventListener("resize", () => {
     syncLayoutHeights();
-    adjustTitleFontSize(); // 🚀 新增：螢幕旋轉或縮放時重新計算
+    adjustTitleFontSize();
   });
 }
