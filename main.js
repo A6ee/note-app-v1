@@ -1596,7 +1596,7 @@ async function generateCustomQuiz(count, type, isReviewMode = false) {
   }
 
   // 3. 建立 Prompt 與 Schema
-  const prompt = `你是一位專業教授「認知破壞終結者」。請根據以下提供的學習內容，出一份高品質的測驗。
+  const prompt = `你是一位專業教授「MemorAIze」。請根據以下提供的學習內容，出一份高品質的測驗。
 題數：${count} 題
 題型要求：${typeInstruction}
 
@@ -1760,7 +1760,7 @@ async function startSmartReviewQuiz() {
 
   showModal("✨ Memo助手正在進行出題...");
 
-  const prompt = `你是一位嚴謹的教授「認知破壞終結者」。請針對以下提供的多篇筆記內容，出一份具備「深度聯繫」的 5 題單選題測驗。
+  const prompt = `你是一位嚴謹的教授「MemorAIze」。請針對以下提供的多篇筆記內容，出一份具備「深度聯繫」的 5 題單選題測驗。
 題目必須包含：
 1. 針對單一筆記內容的重點考核。
 2. 跨筆記（跨領域）的比較或關聯性問題（例如：A與B概念有何共同點？）。
@@ -1797,7 +1797,7 @@ async function startSmartReviewQuiz() {
       .trim();
     const result = JSON.parse(cleanJson);
 
-    let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 認知破壞挑戰：跨領域戰役</h3>`;
+    let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 MemorAIze：跨領域戰役</h3>`;
     result.questions.forEach((q, qIdx) => {
       html += `
         <div class="mb-8 border-b border-gray-50 pb-6">
@@ -2458,7 +2458,7 @@ Object.assign(window, {
       case "export-data": {
         const backup = {
           exportedAt: new Date().toISOString(),
-          app: "認知破壞終結者 3.0",
+          app: "MemorAIze",
           notes: notesLibrary,
           settings: appSettings,
           quizHistory,

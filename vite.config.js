@@ -7,8 +7,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "apple-touch-icon.png", "mask-icon.svg"],
       manifest: {
-        name: "認知破壞終結者3.0 ✨",
-        short_name: "認知破壞終結者",
+        name: "MemorAIze✨",
+        short_name: "MemorAIze",
         description: "您的 AI 課堂筆記助手",
         theme_color: "#ffffff",
         icons: [
