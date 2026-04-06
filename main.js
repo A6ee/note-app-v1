@@ -23,10 +23,16 @@ let seconds = 0;
 let recognition;
 let fullTranscript = "";
 let isRecording = false;
+let isGeneratingSummary = false;
+let isRecognitionStarting = false;
+let isStoppingRecognition = false;
 
 let recognitionRestartTimer = null;
 let recognitionEndFailCount = 0;
 let lastInterim = "";
+
+const TEMP_TRANSCRIPT_KEY = "temp_transcript";
+const RECOGNITION_MAX_RESTARTS = 5;
 
 let quizHistory =
   JSON.parse(localStorage.getItem("president_quiz_history")) || [];
@@ -512,16 +518,73 @@ function markNoteDeleted(noteId) {
  * =========================================================
  */
 
+function getTranscriptText() {
+  return `${fullTranscript}${lastInterim}`.trim();
+}
+
+function persistTempTranscript(text = getTranscriptText()) {
+  localStorage.setItem(TEMP_TRANSCRIPT_KEY, text || "");
+}
+
+function stopRecognitionSafely() {
+  if (!recognition) return;
+  isStoppingRecognition = true;
+  if (recognitionRestartTimer) {
+    clearTimeout(recognitionRestartTimer);
+    recognitionRestartTimer = null;
+  }
+  try {
+    recognition.stop();
+  } catch (err) {
+    isStoppingRecognition = false;
+    console.warn("Recognition stop skipped:", err);
+  }
+}
+
+function startRecognitionSafely() {
+  if (!recognition) initRecognition();
+  if (!recognition || isRecognitionStarting) return false;
+
+  isRecognitionStarting = true;
+  try {
+    recognition.start();
+    return true;
+  } catch (err) {
+    isRecognitionStarting = false;
+    console.error("Recognition start failed:", err);
+    return false;
+  }
+}
+
+function getRecognitionErrorMessage(errorCode) {
+  const map = {
+    "not-allowed": "麥克風權限被拒絕，請允許權限後重試。",
+    "service-not-allowed": "瀏覽器禁止語音辨識服務，請檢查瀏覽器設定。",
+    "audio-capture": "找不到可用麥克風裝置，請確認輸入裝置。",
+    network: "語音辨識網路中斷，請檢查網路後重試。",
+    "no-speech": "未偵測到語音輸入，請靠近麥克風再試一次。",
+  };
+  return map[errorCode] || `語音辨識發生錯誤：${errorCode || "unknown"}`;
+}
+
 function initRecognition() {
   if (!("webkitSpeechRecognition" in window)) {
     console.warn("This browser does not support webkitSpeechRecognition.");
+    recognition = null;
     return;
   }
+
+  if (recognition) return;
 
   recognition = new window.webkitSpeechRecognition();
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.lang = "zh-TW";
+
+  recognition.onstart = () => {
+    isRecognitionStarting = false;
+    recognitionEndFailCount = 0;
+  };
 
   recognition.onresult = (event) => {
     let interim = "";
@@ -532,68 +595,80 @@ function initRecognition() {
     }
 
     lastInterim = interim;
-    localStorage.setItem("temp_transcript", fullTranscript + interim || "");
+    const displayText = getTranscriptText();
+    persistTempTranscript(displayText);
 
     const el = safeEl("live-transcript");
-    if (el) el.innerText = fullTranscript + interim || "正在聽課中...";
+    if (el) el.innerText = displayText || "正在聽課中...";
+  };
+
+  recognition.onerror = (event) => {
+    const code = event?.error || "unknown";
+
+    if (code === "aborted" && isStoppingRecognition) return;
+
+    const msg = getRecognitionErrorMessage(code);
+    console.error("Recognition error:", code, event);
+
+    if (["not-allowed", "service-not-allowed", "audio-capture"].includes(code)) {
+      isRecording = false;
+      clearInterval(timerInterval);
+      alert(msg);
+      window.navigateTo("page-list");
+      return;
+    }
+
+    console.warn(msg);
   };
 
   recognition.onend = () => {
+    isRecognitionStarting = false;
+
+    if (isStoppingRecognition) {
+      isStoppingRecognition = false;
+      return;
+    }
+
     if (!isRecording) return;
-    if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
+
+    if (recognitionRestartTimer) {
+      clearTimeout(recognitionRestartTimer);
+      recognitionRestartTimer = null;
+    }
+
+    if (recognitionEndFailCount >= RECOGNITION_MAX_RESTARTS) {
+      const snapshot = getTranscriptText();
+      persistTempTranscript(snapshot);
+      isRecording = false;
+      clearInterval(timerInterval);
+      alert("語音辨識已中斷且重啟失敗，逐字稿已暫存。請重新開始錄音。");
+      window.navigateTo("page-list");
+      return;
+    }
+
     recognitionRestartTimer = setTimeout(() => {
-      try {
-        recognition.start();
-        recognitionEndFailCount = 0;
-      } catch (e) {}
-    }, 600);
+      recognitionEndFailCount += 1;
+      const ok = startRecognitionSafely();
+      if (!ok) {
+        console.warn(
+          `Recognition restart attempt ${recognitionEndFailCount}/${RECOGNITION_MAX_RESTARTS} failed`,
+        );
+      }
+    }, 700);
   };
 }
-recognition = new window.webkitSpeechRecognition();
-recognition.continuous = true;
-recognition.interimResults = true;
-recognition.lang = "zh-TW";
-
-recognition.onresult = (event) => {
-  let finalCombined = "";
-  let interimCombined = "";
-
-  for (let i = 0; i < event.results.length; ++i) {
-    if (event.results[i].isFinal) {
-      finalCombined += event.results[i][0].transcript;
-    } else {
-      interimCombined += event.results[i][0].transcript;
-    }
-  }
-
-  fullTranscript = finalCombined;
-  lastInterim = interimCombined;
-
-  const displayResult = (finalCombined + interimCombined).trim();
-
-  const el = safeEl("live-transcript");
-  if (el) {
-    el.innerText = displayResult || "Memo助手正在聽課...";
-  }
-
-  localStorage.setItem("temp_transcript", displayResult);
-};
-
-recognition.onend = () => {
-  if (!isRecording) return;
-  if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
-  recognitionRestartTimer = setTimeout(() => {
-    try {
-      recognition.start();
-    } catch (e) {}
-  }, 500);
-};
 
 function startRecordPage() {
+  if (isRecording || isGeneratingSummary) return;
+
+  initRecognition();
+
   fullTranscript = "";
   lastInterim = "";
+  persistTempTranscript("");
   seconds = 0;
   isRecording = true;
+  recognitionEndFailCount = 0;
 
   const timerEl = safeEl("record-timer");
   const liveEl = safeEl("live-transcript");
@@ -602,10 +677,12 @@ function startRecordPage() {
 
   window.navigateTo("page-record");
 
-  if (recognition) {
-    try {
-      recognition.start();
-    } catch (_) {}
+  const started = startRecognitionSafely();
+  if (!started) {
+    alert("語音辨識啟動失敗，請檢查麥克風權限後重試。");
+    isRecording = false;
+    window.navigateTo("page-list");
+    return;
   }
 
   clearInterval(timerInterval);
@@ -622,25 +699,35 @@ function startRecordPage() {
 
 function cancelRecording() {
   isRecording = false;
-  if (recognition) recognition.stop();
+  stopRecognitionSafely();
   clearInterval(timerInterval);
+  persistTempTranscript(getTranscriptText());
   window.navigateTo("page-list");
 }
 
 async function stopRecording() {
+  if (isGeneratingSummary) return;
+
+  isGeneratingSummary = true;
   isRecording = false;
-  if (recognition) recognition.stop();
+  stopRecognitionSafely();
   clearInterval(timerInterval);
 
-  const finalTranscript = (fullTranscript + lastInterim).trim();
-  localStorage.setItem("temp_transcript", finalTranscript || "");
+  const finalTranscript = getTranscriptText();
+  persistTempTranscript(finalTranscript || "");
 
   const durationText = safeEl("record-timer")?.innerText || "00:00";
+
+  if (!finalTranscript) {
+    alert("尚未取得有效逐字稿，請再錄一次。若中途失敗可檢查麥克風權限。");
+    window.navigateTo("page-list");
+    isGeneratingSummary = false;
+    return;
+  }
+
   window.navigateTo("page-loading");
 
-  const prompt = `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。逐字稿：${
-    fullTranscript + lastInterim || "模擬內容"
-  }`;
+  const prompt = `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。逐字稿：${finalTranscript}`;
 
   const schema = {
     type: "OBJECT",
@@ -669,19 +756,12 @@ async function stopRecording() {
 
   try {
     const data = await callGemini(prompt, schema);
-
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    const clean = String(raw)
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
-    const result = JSON.parse(clean);
+    const raw = extractAiText(data);
+    const result = normalizeAiNotePayload(safeParseAiJson(raw));
 
     const newNote = {
       ...result,
       id: Date.now().toString(),
-      title: result?.title?.trim() ? result.title.trim() : "新筆記",
-      intro: result?.intro || "尚無摘要",
       category: "未分類",
       date: `${new Date().getMonth() + 1} / ${new Date().getDate()}`,
       duration: durationText,
@@ -693,11 +773,13 @@ async function stopRecording() {
     saveNotesToDisk();
 
     window.loadNoteDetails(newNote.id);
-    localStorage.removeItem("temp_transcript");
+    localStorage.removeItem(TEMP_TRANSCRIPT_KEY);
   } catch (err) {
     console.error("處理失敗:", err);
-    alert("生成失敗，但逐字稿已為您暫存。");
+    alert(`生成失敗，但逐字稿已為您暫存。\n原因：${err.message || "未知錯誤"}`);
     window.navigateTo("page-list");
+  } finally {
+    isGeneratingSummary = false;
   }
 }
 
@@ -708,6 +790,27 @@ async function stopRecording() {
  */
 
 async function callGemini(prompt, responseSchema = null, retryCount = 0) {
+  const MAX_RETRY = 2;          // 最多重試 2 次（不含首次）
+  const MAX_RETRY_503 = 1;      // 503 服務暫時不可用，最多重試 1 次
+  const base = Math.pow(2, retryCount) * 1000;
+  const jitter = base * (0.7 + Math.random() * 0.6);
+
+  const shouldRetryNetworkError = (err) => {
+    // AbortError 代表前端 25s 計時器主動取消，不應重試
+    if (err?.name === "AbortError") return false;
+    const msg = String(err?.message || "");
+    return /network|fetch/i.test(msg);
+  };
+
+  const shouldRetryStatus = (status, retry) => {
+    if (status === 503) return retry < MAX_RETRY_503;
+    if (status === 429 || status >= 500) return retry < MAX_RETRY;
+    return false;
+  };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
+
   try {
     const response = await fetch("/api/gemini", {
       method: "POST",
@@ -716,19 +819,94 @@ async function callGemini(prompt, responseSchema = null, retryCount = 0) {
         prompt: prompt,
         schema: responseSchema,
       }),
+      signal: controller.signal,
     });
 
-    if (!response.ok) throw new Error("middle return Failed");
-    return await response.json();
+    clearTimeout(timeoutId);
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      if (shouldRetryStatus(response.status, retryCount)) {
+        await new Promise((r) => setTimeout(r, jitter));
+        return callGemini(prompt, responseSchema, retryCount + 1);
+      }
+
+      const remoteMsg =
+        data?.error?.message || data?.error || `API 請求失敗 (${response.status})`;
+      throw new Error(String(remoteMsg));
+    }
+
+    if (!data) throw new Error("AI 回應格式錯誤，請稍後再試。")
+
+    return data;
   } catch (err) {
-    if (retryCount < 5) {
-      const base = Math.pow(2, retryCount) * 1000;
-      const jitter = base * (0.7 + Math.random() * 0.6);
+    clearTimeout(timeoutId);
+    if (retryCount < MAX_RETRY && shouldRetryNetworkError(err)) {
       await new Promise((r) => setTimeout(r, jitter));
       return callGemini(prompt, responseSchema, retryCount + 1);
     }
+    // AbortError：明確告知使用者是超時，而非網路錯誤
+    if (err?.name === "AbortError") {
+      throw new Error("AI 請求超時（25 秒），請稍後再試。");
+    }
     throw err;
   }
+}
+
+function extractAiText(data) {
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+}
+
+function safeParseAiJson(rawText) {
+  const raw = String(rawText || "").trim();
+  if (!raw) throw new Error("AI 回傳空內容");
+
+  const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+
+  const candidates = [cleaned];
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(cleaned.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (_) {}
+  }
+
+  throw new Error("AI JSON 解析失敗，請重試。");
+}
+
+function normalizeAiNotePayload(payload) {
+  const sections = Array.isArray(payload?.sections)
+    ? payload.sections
+        .map((sec) => ({
+          category: String(sec?.category || "未分類重點"),
+          items: Array.isArray(sec?.items)
+            ? sec.items.map((i) => String(i || "")).filter(Boolean)
+            : [],
+        }))
+        .filter((sec) => sec.items.length > 0)
+    : [];
+
+  const segments = Array.isArray(payload?.segments)
+    ? payload.segments
+        .map((seg) => ({
+          time: String(seg?.time || ""),
+          text: String(seg?.text || "").trim(),
+        }))
+        .filter((seg) => seg.text)
+    : [];
+
+  return {
+    title: String(payload?.title || "").trim() || "新筆記",
+    intro: String(payload?.intro || "").trim() || "尚無摘要",
+    sections,
+    segments,
+  };
 }
 
 /**
@@ -2592,3 +2770,9 @@ if (window.visualViewport) {
     adjustTitleFontSize();
   });
 }
+
+window.addEventListener("beforeunload", () => {
+  if (isRecording || getTranscriptText()) {
+    persistTempTranscript(getTranscriptText());
+  }
+});

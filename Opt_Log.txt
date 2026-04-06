@@ -1,0 +1,112 @@
+原本的問題：語音辨識被重複初始化，事件處理器互相覆蓋
+更新版本：只保留單一初始化入口 initRecognition，且 recognition 已存在就直接 return
+修改方式：刪除檔案中第二段獨立 recognition 建立與 onresult/onend 綁定，統一收斂到同一套 lifecycle
+問題原因：重複初始化會造成 onresult/onend 行為不一致，容易出現 transcript 被覆蓋或重啟邏輯混亂
+
+原本的問題：缺少完整辨識錯誤處理，失敗時使用者不知道發生什麼
+更新版本：新增 onerror + 錯誤分類訊息（權限、麥克風、網路、無語音）
+修改方式：新增 getRecognitionErrorMessage，onerror 依錯誤碼分流；權限/裝置錯誤會中止流程並提示
+問題原因：Web Speech API 常見錯誤若不分類，會變成 silent failure，使用者只看到「沒反應」
+
+原本的問題：逐字稿暫存時機分散，存在覆寫/遺失風險
+更新版本：統一用 getTranscriptText + persistTempTranscript 管理 temp_transcript
+修改方式：onresult、cancel、stop、beforeunload 都走同一暫存 helper
+問題原因：多處直接 setItem 容易寫法不一致，導致保存內容不完整或時機錯誤
+
+原本的問題：onend 可能無限制重啟或重啟失敗後無明確收斂
+更新版本：加入 RECOGNITION_MAX_RESTARTS 上限與失敗後保底處理
+修改方式：onend 內加重啟次數計數，超過上限後停止錄音、保存 transcript、提示使用者
+問題原因：連續 start 失敗會讓流程卡住，且 UI 看似在錄音但實際已失效
+
+原本的問題：stop/cancel/onend 互相干擾，存在競態
+更新版本：新增 isRecognitionStarting、isStoppingRecognition、isGeneratingSummary 三個 guard
+修改方式：用 stopRecognitionSafely/startRecognitionSafely 包住 start/stop；stop 時識別 aborted 不當成錯誤
+問題原因：非同步事件同時觸發時，若無 guard，會出現重複 stop、重複生成、錯誤重啟
+
+原本的問題：stopRecording 在空 transcript 仍往下打 AI，產生無效請求
+更新版本：先檢查 finalTranscript，為空則直接提示並返回
+修改方式：stopRecording 前段新增空內容防護
+問題原因：空內容生成失敗機率高，也會讓使用者誤判是 AI 壞掉而不是前段錄音失敗
+
+原本的問題：AI 生成失敗時雖有提示，但保留策略與流程收斂不夠嚴謹
+更新版本：失敗一定保留 temp transcript，並在 finally 釋放生成鎖
+修改方式：stopRecording 加入 try/catch/finally 結構化收斂
+問題原因：沒有穩定的 finally 收斂，可能導致按鈕鎖住或狀態殘留
+
+原本的問題：callGemini retry 條件過粗，可能不必要重試或超時卡住
+更新版本：加入 timeout、狀態碼分流（429/5xx 才重試）、網路錯誤判斷
+修改方式：fetch 增加 AbortController；用 shouldRetryStatus / shouldRetryNetworkError 控制退避重試
+問題原因：不分錯誤類型地重試會放大延遲，且無 timeout 容易讓流程長時間無回應
+
+原本的問題：AI 回傳 JSON 解析脆弱（code fence/污染字串會直接爆）
+更新版本：safeParseAiJson 提供清理與 fallback 解析策略
+修改方式：先去除 code fence，再嘗試整段 parse，失敗再嘗試取首尾大括號片段
+問題原因：LLM 回傳常夾帶非 JSON 字元，單次 JSON.parse 成功率不穩定
+
+原本的問題：即使 parse 成功，欄位缺漏仍可能讓 UI 渲染不穩
+更新版本：normalizeAiNotePayload 做欄位補齊與清洗
+修改方式：title/intro 預設值、sections/segments 陣列化、空值過濾
+問題原因：前端渲染預期固定資料形狀，缺欄位會造成空白內容或潛在例外
+
+原本的問題：使用者離開頁面時可能丟失當前逐字稿
+更新版本：beforeunload 時自動保存最新 transcript
+修改方式：新增 beforeunload 監聽，錄音中或有內容即持久化
+問題原因：頁面刷新/關閉是高頻中斷場景，不做最後落盤容易遺失資料
+
+原本的問題：流程邏輯分散在大函式，維護困難
+更新版本：拆出小型 helper（辨識控制、暫存、AI parse/normalize）
+修改方式：在不改 UI 的前提下，只抽離高風險區塊
+問題原因：高耦合函式難除錯，尤其是錄音與非同步 API 混在一起時
+
+原本的問題： callGemini 的 AbortError 被當作可重試的網路錯誤，導致 25s 超時後繼續遞迴，最長可卡住 125 秒
+更新版本： AbortError 明確排除在重試條件外，超時直接拋出「AI 請求超時（25 秒）」提示
+修改方式： shouldRetryNetworkError 移除 err?.name === "AbortError" 判斷，catch 區塊補上 AbortError 的中文錯誤訊息
+問題原因： AbortController.abort() 觸發的是前端自己主動取消，不是網路問題，重試只會讓同樣的 25s 計時器一次次觸發，形成無意義的遞迴迴圈
+
+原本的問題： 503 使用與 429 相同的 MAX_RETRY = 5，等待時間累計超過 31 秒
+更新版本： 503 獨立設為 MAX_RETRY_503 = 1，最多重試 1 次後快速收斂；429 與其他 5xx 維持 MAX_RETRY = 2
+修改方式： shouldRetryStatus 改為接收 retry 計數，依錯誤碼分流上限
+問題原因： 503 語意是服務容量不足，短時間多次重試無助於成功，只是延遲失敗告知的時機；429 和偶發 500 仍有重試價值
+
+原本的問題： gemini.js 對 Google upstream fetch 沒有 timeout，若 Google API 回應慢，Vercel 會在 30 秒後強制 kill function，產生非預期中斷
+更新版本： 加入 AbortSignal.timeout(20000)，20 秒無回應即主動切斷
+修改方式： fetch(url, { ... }) 增加 signal: AbortSignal.timeout(20000)
+問題原因： Vercel serverless 有 30s hard limit，後端若沒有自己的超時防護，會被平台強制終止而非優雅結束，導致前端收不到正常的錯誤回應；20s 確保在 30s 之前完成收斂
+
+
+
+手動驗證項目
+
+錄音正常流程
+進錄音頁說話 10 秒後按停止
+預期：進 loading，成功產生筆記，最後 temp transcript 被清掉
+
+錄音中斷重啟上限
+錄音途中把麥克風裝置拔掉或拒絕權限
+預期：不是無限重啟；達上限後跳提示並回列表，逐字稿仍在
+
+取消錄音保底
+錄到一半按取消
+預期：回列表，逐字稿有保留在暫存
+
+AI 失敗保底
+暫時讓 API key 失效後按停止
+預期：顯示失敗原因，回列表，逐字稿不遺失
+
+JSON 汙染容錯
+模擬 AI 回傳含 code fence 或多餘文字
+預期：多數情況仍可解析；不能解析時也不會丟 transcript
+
+
+
+
+尚未完全解決的風險
+
+temp_transcript 目前是被動保存，尚未做「啟動後可視化復原提示」與「一鍵恢復到編輯態」。
+
+Web Speech API 在不同瀏覽器兼容差異仍存在（目前以 webkitSpeechRecognition 為主）。
+
+main.js:16 的 selectedTrashNotes 仍是潛在獨立風險，建議下一輪修正。
+
+後端 gemini.js 仍可再加 request body 驗證與上游錯誤分類標準化（本輪未改，以避免擴大風險）。
+

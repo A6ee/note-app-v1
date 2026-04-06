@@ -21,6 +21,7 @@ export default async function handler(req, res) {
         const googleRes = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(20000),
             body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: schema ? { 
