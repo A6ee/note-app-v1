@@ -3,6 +3,8 @@
  * 0) Config & State（設定與狀態）
  * =========================================================
  */
+import localforage from "localforage";
+import { dataService } from "./services/dataService";
 import { registerSW } from "virtual:pwa-register";
 registerSW({ immediate: true });
 
@@ -13,7 +15,7 @@ let activeListTab = "note";
 let currentSessionScore = { correct: 0, total: 0 };
 // env
 // 改到api/gemini.js中串接api key
-//let selectedTrashNotes = new Set();
+let selectedTrashNotes = new Set();
 let selectedReviewNotes = new Set();
 
 let lastActivePageId = "page-home";
@@ -34,20 +36,58 @@ let lastInterim = "";
 const TEMP_TRANSCRIPT_KEY = "temp_transcript";
 const RECOGNITION_MAX_RESTARTS = 5;
 
-let quizHistory =
-  JSON.parse(localStorage.getItem("president_quiz_history")) || [];
+const STORAGE_KEYS = {
+  QUIZ_HISTORY: "president_quiz_history",
+  WRONG_QUESTIONS: "president_wrong_questions",
+  NOTES: "president_notes",
+  SETTINGS: "president_settings",
+  TEMP_TRANSCRIPT: TEMP_TRANSCRIPT_KEY,
+};
+
+const storage = localforage.createInstance({
+  name: "MemorAIze",
+  storeName: "app_state",
+});
+
+function parseJsonSafe(raw, fallback) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+async function getStorageValueWithLegacyFallback(key, fallback, parser = (v) => v) {
+  const value = await storage.getItem(key);
+  if (value !== null && value !== undefined) return value;
+
+  const legacyRaw = localStorage.getItem(key);
+  if (legacyRaw === null) return fallback;
+
+  const legacyValue = parser(legacyRaw);
+  await storage.setItem(key, legacyValue);
+  localStorage.removeItem(key);
+  return legacyValue;
+}
+
+function persistStorageValue(key, value) {
+  return storage.setItem(key, value).catch((err) => {
+    console.error(`儲存失敗 (${key}):`, err);
+  });
+}
+
+let quizHistory = [];
 
 function saveQuizRecord(record) {
   quizHistory.push({
     ...record,
     timestamp: Date.now(),
   });
-  localStorage.setItem("president_quiz_history", JSON.stringify(quizHistory));
+  void persistStorageValue(STORAGE_KEYS.QUIZ_HISTORY, quizHistory);
 }
 
 // main.js
-let wrongQuestions =
-  JSON.parse(localStorage.getItem("president_wrong_questions")) || [];
+let wrongQuestions = [];
 
 // 艾賓浩斯複習間隔 (毫秒)
 const EB_INTERVALS = [
@@ -59,15 +99,12 @@ const EB_INTERVALS = [
 ];
 
 function saveWrongQuestions() {
-  localStorage.setItem(
-    "president_wrong_questions",
-    JSON.stringify(wrongQuestions),
-  );
+  void persistStorageValue(STORAGE_KEYS.WRONG_QUESTIONS, wrongQuestions);
 }
 /**
  * Notes / Settings
  */
-let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
+let notesLibrary = [
   {
     id: "note-long-1",
     title: "馬斯洛需求層次：人類動機的核心",
@@ -353,13 +390,17 @@ let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
   },
 ];
 
+const DEFAULT_NOTES_LIBRARY = JSON.parse(JSON.stringify(notesLibrary));
+
 let currentNoteData = notesLibrary?.[0] || null;
 
-let appSettings = JSON.parse(localStorage.getItem("president_settings")) || {
+const DEFAULT_APP_SETTINGS = {
   nickname: "同學",
   avatarSeed: "Fox",
   noteStyle: "standard",
 };
+
+let appSettings = { ...DEFAULT_APP_SETTINGS };
 
 const animalAvatars = [
   "Fox",
@@ -377,6 +418,140 @@ const animalAvatars = [
 ];
 
 let tempSelectedAvatar = appSettings.avatarSeed;
+
+function mountAuthControlsIfNeeded() {
+  if (safeEl("auth-signin-btn") || safeEl("auth-signout-btn")) return;
+
+  const settingsRoot = document.querySelector("#page-settings .settings-scroll .px-6");
+  if (!settingsRoot) return;
+
+  const section = document.createElement("section");
+  section.className = "mb-8";
+  section.innerHTML = `
+    <p class="text-[10px] text-gray-300 font-black tracking-widest uppercase mb-4 ml-1">雲端同步帳號</p>
+    <div class="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm space-y-3">
+      <p id="auth-status-text" class="text-xs font-bold text-gray-500">未登入（僅本機模式）</p>
+      <button
+        id="auth-signin-btn"
+        type="button"
+        data-action="auth-signin-google"
+        class="w-full py-3 bg-white border border-gray-100 text-gray-700 rounded-2xl text-xs font-black shadow-sm active:scale-95"
+      >
+        <i class="fab fa-google mr-2"></i>Google 登入並同步筆記
+      </button>
+      <button
+        id="auth-signout-btn"
+        type="button"
+        data-action="auth-signout"
+        class="hidden w-full py-3 bg-gray-50 text-gray-500 rounded-2xl text-xs font-black active:scale-95"
+      >
+        登出
+      </button>
+    </div>
+  `;
+
+  const sections = settingsRoot.querySelectorAll("section");
+  if (sections.length >= 2) {
+    settingsRoot.insertBefore(section, sections[2]);
+  } else {
+    settingsRoot.appendChild(section);
+  }
+}
+
+function updateAuthUI() {
+  const user = dataService.getCurrentUser();
+  const statusEl = safeEl("auth-status-text");
+  const signInBtn = safeEl("auth-signin-btn");
+  const signOutBtn = safeEl("auth-signout-btn");
+
+  if (statusEl) {
+    statusEl.innerText = user
+      ? `已登入：${user.displayName || user.email || user.uid}`
+      : "未登入（僅本機模式）";
+  }
+
+  if (signInBtn) signInBtn.classList.toggle("hidden", !!user);
+  if (signOutBtn) signOutBtn.classList.toggle("hidden", !user);
+}
+
+async function signInWithGoogleFlow() {
+  try {
+    await dataService.signInWithGoogle();
+    notesLibrary = dataService.getNotes();
+    currentNoteData = notesLibrary?.[0] || null;
+    updateAuthUI();
+    renderCategoryFilters();
+    renderNotesList();
+    renderReviewSelection();
+    renderTrashList();
+    console.info("[ui] sign-in flow completed");
+  } catch (err) {
+    console.error("[ui] sign-in failed:", err);
+    alert(`Google 登入失敗：${err.message || "未知錯誤"}`);
+  }
+}
+
+async function signOutFlow() {
+  try {
+    await dataService.signOut();
+    updateAuthUI();
+    console.info("[ui] sign-out completed");
+  } catch (err) {
+    console.error("[ui] sign-out failed:", err);
+    alert(`登出失敗：${err.message || "未知錯誤"}`);
+  }
+}
+
+async function initializePersistedState() {
+  mountAuthControlsIfNeeded();
+
+  quizHistory = await getStorageValueWithLegacyFallback(
+    STORAGE_KEYS.QUIZ_HISTORY,
+    [],
+    (raw) => parseJsonSafe(raw, []),
+  );
+
+  wrongQuestions = await getStorageValueWithLegacyFallback(
+    STORAGE_KEYS.WRONG_QUESTIONS,
+    [],
+    (raw) => parseJsonSafe(raw, []),
+  );
+
+  const loadedNotes = await dataService.init(DEFAULT_NOTES_LIBRARY);
+  notesLibrary = Array.isArray(loadedNotes) && loadedNotes.length
+    ? loadedNotes
+    : JSON.parse(JSON.stringify(DEFAULT_NOTES_LIBRARY));
+
+  dataService.onNotesChanged((nextNotes) => {
+    notesLibrary = Array.isArray(nextNotes) ? nextNotes : [];
+    currentNoteData = notesLibrary?.[0] || null;
+    renderCategoryFilters();
+    renderNotesList();
+    renderReviewSelection();
+    renderTrashList();
+  });
+
+  const loadedSettings = await getStorageValueWithLegacyFallback(
+    STORAGE_KEYS.SETTINGS,
+    DEFAULT_APP_SETTINGS,
+    (raw) => parseJsonSafe(raw, DEFAULT_APP_SETTINGS),
+  );
+  appSettings = {
+    ...DEFAULT_APP_SETTINGS,
+    ...(loadedSettings || {}),
+  };
+
+  const loadedTranscript = await getStorageValueWithLegacyFallback(
+    STORAGE_KEYS.TEMP_TRANSCRIPT,
+    "",
+    (raw) => String(raw || ""),
+  );
+  fullTranscript = String(loadedTranscript || "");
+
+  tempSelectedAvatar = appSettings.avatarSeed;
+  currentNoteData = notesLibrary?.[0] || null;
+  updateAuthUI();
+}
 
 /**
  * =========================================================
@@ -488,7 +663,7 @@ function saveSettingsFromUI() {
   appSettings.nickname = safeEl("settings-nickname")?.value || "Memo";
   appSettings.avatarSeed = tempSelectedAvatar;
 
-  localStorage.setItem("president_settings", JSON.stringify(appSettings));
+  void persistStorageValue(STORAGE_KEYS.SETTINGS, appSettings);
   updateHomeGreeting();
   alert("您的個人檔案已同步更新 ✨");
   window.navigateTo("page-home");
@@ -501,7 +676,9 @@ function saveSettingsFromUI() {
  */
 
 function saveNotesToDisk() {
-  localStorage.setItem("president_notes", JSON.stringify(notesLibrary));
+  void dataService.persistNotesSnapshot(notesLibrary).catch((err) => {
+    console.error("[ui] saveNotesToDisk sync failed:", err);
+  });
 }
 
 function markNoteDeleted(noteId) {
@@ -523,7 +700,7 @@ function getTranscriptText() {
 }
 
 function persistTempTranscript(text = getTranscriptText()) {
-  localStorage.setItem(TEMP_TRANSCRIPT_KEY, text || "");
+  void persistStorageValue(STORAGE_KEYS.TEMP_TRANSCRIPT, text || "");
 }
 
 function stopRecognitionSafely() {
@@ -769,11 +946,11 @@ async function stopRecording() {
       isDeleted: false,
     };
 
-    notesLibrary.unshift(newNote);
-    saveNotesToDisk();
+    const nextNotes = await dataService.createNote(newNote);
+    notesLibrary = Array.isArray(nextNotes) ? nextNotes : [newNote, ...notesLibrary];
 
     window.loadNoteDetails(newNote.id);
-    localStorage.removeItem(TEMP_TRANSCRIPT_KEY);
+    void storage.removeItem(STORAGE_KEYS.TEMP_TRANSCRIPT);
   } catch (err) {
     console.error("處理失敗:", err);
     alert(`生成失敗，但逐字稿已為您暫存。\n原因：${err.message || "未知錯誤"}`);
@@ -2551,7 +2728,7 @@ Object.assign(window, {
         if (confirm("確定要將所有測驗紀錄歸零嗎？這不會刪除您的筆記喔！✨")) {
           quizHistory = [];
 
-          localStorage.removeItem("president_quiz_history");
+          void storage.removeItem(STORAGE_KEYS.QUIZ_HISTORY);
 
           renderLearningDashboard();
 
@@ -2633,6 +2810,14 @@ Object.assign(window, {
         saveSettingsFromUI();
         break;
 
+      case "auth-signin-google":
+        void signInWithGoogleFlow();
+        break;
+
+      case "auth-signout":
+        void signOutFlow();
+        break;
+
       case "export-data": {
         const backup = {
           exportedAt: new Date().toISOString(),
@@ -2663,8 +2848,7 @@ Object.assign(window, {
 
       case "clear-all-data":
         if (confirm("清除？")) {
-          localStorage.clear();
-          location.reload();
+          void storage.clear().finally(() => location.reload());
         }
         break;
 
@@ -2734,7 +2918,8 @@ function syncLayoutHeights() {
     root.style.setProperty("--assistant-h", `${assistant.offsetHeight}px`);
 }
 
-window.addEventListener("load", () => {
+window.addEventListener("load", async () => {
+  await initializePersistedState();
   initRecognition();
   updateHomeGreeting();
   renderCategoryFilters();

@@ -40,3 +40,5 @@ GEMINI_API_KEY='你的金鑰' or VITE_GEMINI_API_KEY='你的key'
 vercel dev
 
 啟動後，請使用終端機顯示的網址（通常是 http://localhost:3000）進行測試。
+
+開發時，若需要終止所有dev，可打以下指令: taskkill /F /IM node.exe
