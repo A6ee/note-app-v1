@@ -13,7 +13,7 @@ let activeListTab = "note";
 let currentSessionScore = { correct: 0, total: 0 };
 // env
 // 改到api/gemini.js中串接api key
-//let selectedTrashNotes = new Set();
+let selectedTrashNotes = new Set();
 let selectedReviewNotes = new Set();
 
 let lastActivePageId = "page-home";
@@ -23,6 +23,12 @@ let seconds = 0;
 let recognition;
 let fullTranscript = "";
 let isRecording = false;
+//新增（語）
+let selectedMaterialFile = null;
+
+let fakeLoadingTimer = null;
+let fakeLoadingProgress = 0;
+let fakeLoadingStageIndex = 0;
 
 let recognitionRestartTimer = null;
 let recognitionEndFailCount = 0;
@@ -626,6 +632,206 @@ function cancelRecording() {
   clearInterval(timerInterval);
   window.navigateTo("page-list");
 }
+//新增（語）
+function openAudioImportPicker() {
+  const input = safeEl("audio-file-input");
+  if (input) input.click();
+}
+
+//新增（語）
+function openMaterialImportPicker() {
+  const input = safeEl("material-file-input");
+  if (input) input.click();
+}
+function handleImportedMaterialFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  if (file.type !== "application/pdf") {
+    alert("目前僅支援 PDF 檔案");
+    event.target.value = "";
+    return;
+  }
+
+  selectedMaterialFile = file;
+
+  console.log("選到的 PDF:", file);
+  alert(`已附加教材：${file.name}`);
+  event.target.value = "";
+}
+
+//新增（語）
+async function handleImportedAudioFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  console.log("選到的音檔:", file);
+
+  try {
+    window.navigateTo("page-loading");
+    startFakeLoadingProgress(!!selectedMaterialFile);
+    const fileBase64 = await fileToBase64(file);
+
+    let materialPayload = null;
+
+    if (selectedMaterialFile) {
+      const materialBase64 = await fileToBase64(selectedMaterialFile);
+
+      materialPayload = {
+        fileName: selectedMaterialFile.name,
+        mimeType: selectedMaterialFile.type,
+        fileBase64: materialBase64,
+      };
+    }
+
+    const response = await fetch("/api/upload_audio", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fileName: file.name,
+        mimeType: file.type,
+        fileBase64,
+        materialFile: materialPayload,
+      }),
+    });
+
+    const rawBody = await response.text();
+    let result = {};
+    try {
+      result = rawBody ? JSON.parse(rawBody) : {};
+    } catch (_) {
+      result = { error: rawBody || "Server returned non-JSON response" };
+    }
+
+    if (!response.ok) {
+      throw new Error(result.error || "音檔上傳失敗");
+    }
+
+    if (result.note) {
+      console.log("[MemorAIze] 筆記已建立");
+    }
+
+    const noteData = result.note;
+
+    if (!noteData) {
+      throw new Error("n8n 沒有回傳 note 資料");
+    }
+
+    const newNote = {
+      ...noteData,
+      id: Date.now().toString(),
+      title: noteData?.title?.trim() ? noteData.title.trim() : "匯入筆記",
+      intro: noteData?.intro || "尚無摘要",
+      category: selectedMaterialFile ? "多模態匯入" : "音檔匯入",
+      date: `${new Date().getMonth() + 1} / ${new Date().getDate()}`,
+      duration: result.duration || "00:00",
+      isFavorite: false,
+      isDeleted: false,
+    };
+
+    notesLibrary.unshift(newNote);
+    saveNotesToDisk();
+
+    finishFakeLoadingProgress("完成，正在開啟筆記...");
+
+    setTimeout(() => {
+      window.loadNoteDetails(newNote.id);
+    }, 500);
+  } catch (error) {
+    console.error("音檔上傳錯誤:", error);
+    finishFakeLoadingProgress("處理失敗，請稍後再試");
+    alert(`音檔上傳失敗：${error.message}`);
+  } finally {
+    event.target.value = "";
+  }
+}
+
+function updateLoadingUI(progress, message) {
+  const progressBar = safeEl("loading-progress-bar");
+  const progressText = safeEl("loading-progress-text");
+  const loadingMsg = safeEl("loading-msg");
+
+  if (progressBar) {
+    progressBar.style.width = `${progress}%`;
+  }
+
+  if (progressText) {
+    progressText.innerText = `${progress}%`;
+  }
+
+  if (loadingMsg && message) {
+    loadingMsg.innerText = message;
+  }
+}
+
+function startFakeLoadingProgress(hasMaterial = false) {
+  const stages = hasMaterial
+    ? [
+        { progress: 8, message: "正在上傳音檔..." },
+        { progress: 22, message: "正在分析語音內容..." },
+        { progress: 45, message: "正在讀取教材內容..." },
+        { progress: 68, message: "正在整理課堂筆記..." },
+        { progress: 88, message: "正在生成最終內容..." },
+      ]
+    : [
+        { progress: 8, message: "正在上傳音檔..." },
+        { progress: 28, message: "正在分析語音內容..." },
+        { progress: 60, message: "正在整理課堂筆記..." },
+        { progress: 88, message: "正在生成最終內容..." },
+      ];
+
+  fakeLoadingProgress = 0;
+  fakeLoadingStageIndex = 0;
+
+  updateLoadingUI(stages[0].progress, stages[0].message);
+  fakeLoadingProgress = stages[0].progress;
+
+  if (fakeLoadingTimer) clearInterval(fakeLoadingTimer);
+
+  fakeLoadingTimer = setInterval(() => {
+    fakeLoadingStageIndex++;
+
+    if (fakeLoadingStageIndex >= stages.length) {
+      clearInterval(fakeLoadingTimer);
+      fakeLoadingTimer = null;
+      return;
+    }
+
+    const stage = stages[fakeLoadingStageIndex];
+    fakeLoadingProgress = stage.progress;
+    updateLoadingUI(stage.progress, stage.message);
+  }, 1800);
+}
+
+function finishFakeLoadingProgress(message = "完成，正在開啟筆記...") {
+  if (fakeLoadingTimer) {
+    clearInterval(fakeLoadingTimer);
+    fakeLoadingTimer = null;
+  }
+
+  fakeLoadingProgress = 100;
+  updateLoadingUI(100, message);
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = reader.result || "";
+      const base64 = String(result).split(",")[1];
+      resolve(base64);
+    };
+
+    reader.onerror = () => {
+      reject(new Error("檔案讀取失敗"));
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
 
 async function stopRecording() {
   isRecording = false;
@@ -668,6 +874,8 @@ async function stopRecording() {
   };
 
   try {
+    
+
     const data = await callGemini(prompt, schema);
 
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
@@ -1141,6 +1349,35 @@ function updateNavUI(pageId) {
     }
   }
 }
+
+//新增（語）
+document.addEventListener("click", (e) => {
+  const target = e.target.closest("[data-action='import-audio']");
+  if (target) {
+    openAudioImportPicker();
+  }
+});
+
+document.addEventListener("change", (e) => {
+  const target = e.target.closest("#audio-file-input");
+  if (target) {
+    handleImportedAudioFile(e);
+  }
+});
+
+document.addEventListener("click", (e) => {
+  const target = e.target.closest("[data-action='import-material']");
+  if (target) {
+    openMaterialImportPicker();
+  }
+});
+
+document.addEventListener("change", (e) => {
+  const target = e.target.closest("#material-file-input");
+  if (target) {
+    handleImportedMaterialFile(e);
+  }
+});
 
 /**
  * =========================================================

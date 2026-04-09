@@ -264,6 +264,18 @@ img {
     box-shadow 0.2s ease;
 }
 
+.cta-dual-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cta-dual-row .cta-btn {
+  width: 100%;
+  min-width: 0;
+}
+
 .cta-btn:active {
   transform: scale(0.96);
 }

@@ -1,4 +1,90 @@
 import { PDFParse } from "pdf-parse";
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function detectMimeType(fileName, mimeType) {
+  if (mimeType && mimeType.trim()) return mimeType;
+
+  const lower = (fileName || "").toLowerCase();
+  if (lower.endsWith(".aac")) return "audio/aac";
+  if (lower.endsWith(".m4a")) return "audio/mp4";
+  if (lower.endsWith(".mp3")) return "audio/mpeg";
+  if (lower.endsWith(".wav")) return "audio/wav";
+  if (lower.endsWith(".ogg")) return "audio/ogg";
+
+  return "audio/mpeg";
+}
+
+async function callGeminiWithRetry({ apiKey, prompt, schema }) {
+  const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+  const maxRetriesPerModel = 3;
+  let lastError = null;
+
+  for (const model of models) {
+    for (let attempt = 1; attempt <= maxRetriesPerModel; attempt++) {
+      const geminiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: prompt }],
+              },
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+              responseSchema: schema,
+            },
+          }),
+        },
+      );
+
+      const geminiResult = await geminiResponse.json();
+
+      if (geminiResponse.ok) {
+        return { ok: true, model, data: geminiResult };
+      }
+
+      const statusCode = geminiResult?.error?.code || geminiResponse.status;
+      const isRetryable = statusCode === 429 || statusCode === 503;
+
+      lastError = {
+        model,
+        attempt,
+        status: geminiResponse.status,
+        body: geminiResult,
+      };
+
+      console.error(
+        `Gemini failed (model=${model}, attempt=${attempt}):`,
+        JSON.stringify(geminiResult, null, 2),
+      );
+
+      if (!isRetryable) {
+        return { ok: false, model, data: geminiResult, status: geminiResponse.status };
+      }
+
+      if (attempt < maxRetriesPerModel) {
+        const backoffMs = attempt * 1200;
+        await sleep(backoffMs);
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    model: lastError?.model,
+    data: lastError?.body || { error: { message: "Gemini unavailable" } },
+    status: lastError?.status || 503,
+  };
+}
+
 export default async function handler(req, res) {
     if (req.method !== "POST") {
       return res.status(405).json({ error: "Method not allowed" });
@@ -7,11 +93,13 @@ export default async function handler(req, res) {
     try {
       const { fileName, mimeType, fileBase64, materialFile } = req.body || {};
 
-        if (!fileName || !mimeType || !fileBase64) {
+        if (!fileName || !fileBase64) {
             return res.status(400).json({
-            error: "Missing required fields: fileName, mimeType, fileBase64",
+            error: "Missing required fields: fileName, fileBase64",
             });
         }
+
+        const resolvedMimeType = detectMimeType(fileName, mimeType);
 
         const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
         const geminiApiKey =
@@ -29,12 +117,10 @@ export default async function handler(req, res) {
             });
         }
 
-        console.log("音檔檔名:", fileName);
-        console.log("是否收到教材 PDF:", !!materialFile);
-
         if (materialFile) {
-            console.log("教材檔名:", materialFile.fileName);
-            console.log("教材 MIME:", materialFile.mimeType);
+            console.log("[MemorAIze] PDF 教材已接收");
+        } else {
+            console.log("[MemorAIze] 純音檔上傳");
         }
 
         let materialText = "";
@@ -43,14 +129,12 @@ export default async function handler(req, res) {
         try {
             const pdfBuffer = Buffer.from(materialFile.fileBase64, "base64");
 
-            const parser = new PDFParse({ data: pdfBuffer });
-            const textResult = await parser.getText();
-            await parser.destroy();
+          const parser = new PDFParse({ data: pdfBuffer });
+          const textResult = await parser.getText();
+          await parser.destroy();
 
-            materialText = (textResult?.text || "").trim();
-
-            console.log("PDF 抽字成功，前 300 字：");
-            console.log(materialText.slice(0, 300) || "[PDF 沒有抽到文字]");
+          materialText = (textResult?.text || "").trim();
+            console.log("[MemorAIze] PDF 文字提取成功");
         } catch (pdfError) {
             console.error("PDF 文字抽取失敗:", pdfError);
         }
@@ -66,7 +150,7 @@ export default async function handler(req, res) {
           method: "POST",
           headers: {
             Authorization: `Token ${deepgramApiKey}`,
-            "Content-Type": mimeType || "audio/mpeg",
+            "Content-Type": resolvedMimeType,
           },
           body: audioBuffer,
         }
@@ -170,39 +254,28 @@ export default async function handler(req, res) {
         required: ["title", "intro", "sections", "segments"],
       };
   
-      const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text: prompt }],
-              },
-            ],
-            generationConfig: {
-              responseMimeType: "application/json",
-              responseSchema: geminiSchema,
-            },
-          }),
-        }
-      );
-  
-      const geminiResult = await geminiResponse.json();
-  
-      console.log("Gemini 原始回應:", JSON.stringify(geminiResult, null, 2));
+      const geminiCall = await callGeminiWithRetry({
+        apiKey: geminiApiKey,
+        prompt,
+        schema: geminiSchema,
+      });
 
-        if (!geminiResponse.ok) {
-        console.error("Gemini note generation failed:", JSON.stringify(geminiResult, null, 2));
+      const geminiResult = geminiCall.data;
+      if (geminiCall.ok) {
+        console.log(`[MemorAIze] 筆記生成成功 (模型: ${geminiCall.model})`);
+      } else {
+        console.warn(`[MemorAIze] 筆記生成失敗 (模型: ${geminiCall.model || "unknown"}, 狀態: ${geminiCall.status})`);
+      }
 
-        return res.status(500).json({
-            error: "Gemini note generation failed",
-            details: geminiResult,
+      if (!geminiCall.ok) {
+        const isUnavailable = (geminiResult?.error?.code || geminiCall.status) === 503;
+        return res.status(isUnavailable ? 503 : 500).json({
+          error: isUnavailable
+            ? "Gemini busy, please retry in a few seconds"
+            : "Gemini note generation failed",
+          details: geminiResult,
         });
-        }
+      }
   
       const rawText =
         geminiResult?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";

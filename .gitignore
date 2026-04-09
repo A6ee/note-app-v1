@@ -23,3 +23,5 @@ index_old.html
 
 .vs
 .env*.local
+
+.vercel
