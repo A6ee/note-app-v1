@@ -6,15 +6,15 @@ export default async function handler(req, res) {
 
     const { prompt, schema } = req.body;
 
-    // Vercel 後端環境請使用 process.env
+    // Unified env source: project config is stored in .env.
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY; 
     
-    // 檢查 API Key 是否存在
+    // error return for missing API key, to avoid silent failures and help with debugging.
     if (!apiKey) {
         return res.status(500).json({ error: 'Server configuration error: Missing API Key' });
     }
 
-    const model = "gemini-2.5-flash"; // 注意：目前穩定版為 1.5，若您確定有 2.0/2.5 權限再修改
+    const model = "gemini-2.5-flash"; // model name can be made dynamic in the future if needed, but hardcoding for simplicity now.
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     try {
