@@ -1,42 +1,117 @@
-MemorAIze - 版本更新說明
-🚀 重要更新：API 安全架構升級
-為了避免 Gemini API Key 暴露在前端瀏覽器導致被盜用的風險，本版本引入了「後端中間層」架構。
+# MemorAIze — AI 課堂筆記助手
 
-1. 📂 專案架構異動
-現在專案分為 前端 (Frontend) 與 後端 (Serverless API) 兩部分：
+## 新增功能說明
 
-/api/gemini.js：後端程式碼。負責安全存放 API Key 並代替前端呼叫 Google 伺服器。
+### 1. 音檔匯入 + AI 自動筆記（Beta）
 
-main.js：前端核心邏輯。現在不再直接呼叫 Google，而是呼叫我們自己的 /api/gemini 接口。
+- 支援格式：`.mp3`、`.aac`、`.m4a`、`.wav`、`.ogg`
+- 流程：上傳音檔 → [Deepgram](https://deepgram.com/) Nova-3 模型語音轉文字 → Gemini 整理成結構化筆記
+- 自動偵測 MIME 類型（解決部分瀏覽器回傳空 MIME 的問題）
 
-index.html / style.css：前端介面與美化。
+### 2. PDF 教材輔助匯入
 
-2. 🛠️ 功能邏輯變更
-API 串接轉向：main.js 中的 callGemini 函式已修改，現在改為請求 /api/gemini 路徑。
+- 可同時上傳音檔 + PDF 教材
+- PDF 文字內容作為「輔助依據」，讓 Gemini 產生更精準的筆記
+- 若未上傳 PDF，筆記僅依逐字稿生成
 
-錯誤重試機制：保留了 callGemini 的 5 次指數退避重試 (Exponential Backoff Retry) 功能，確保在網路不穩時能自動重新嘗試。
+### 3. AI 生成進度條
 
-安全性提升：瀏覽器的「開發者工具」現在只能看到對我們自己伺服器的請求，無法看到實際的 API Key。
+- 音檔處理期間顯示擬真進度條
+- 依任務是否含 PDF 分別顯示不同的進度階段文字
 
-3. 💻 本地開發環境安裝 (重要！)
-由於引入了後端架構，現在不能直接用 Vite 啟動（Vite 讀不到 /api 內的後端程式），請隊友務必安裝 Vercel 環境：
+### 4. 安全性強化（Privacy）
 
-第一步：全域安裝 Vercel CLI 
-(!!!先直接npm install，若不能verce dev，再進行第一步)
+- 後端 Console 僅輸出進度狀態，不輸出任何逐字稿或教材內容
+- 前端不再直接呼叫 Google API，所有 API Key 存放於 Vercel 後端環境變數
 
+
+## 環境變數設定
+
+在專案根目錄建立 `.env` 檔案：
+
+```env
+GEMINI_API_KEY=你的_Gemini_API_Key
+DEEPGRAM_API_KEY=你的_Deepgram_API_Key
+```
+
+> `.env` 已加入 `.gitignore`，不會被提交到 Git。
+
+**Gemini API Key 取得：** https://aistudio.google.com/apikey  
+**Deepgram API Key 取得：** https://console.deepgram.com/
+
+## 本地開發測試流程
+
+```bash
+# 1. 安裝依賴
+npm install
+
+# 2. 安裝 Vercel CLI（若尚未安裝）
 npm install -g vercel
 
-為什麼要裝 Vercel？
-Vercel 是一個伺服器平台。產品上線後，API Key 會安全地存在雲端。在本地開發時，我們必須透過 vercel dev 指令來模擬伺服器環境，否則前端會找不到後端 API (api下的gemini.js也會被擋)。
+# 3. 首次執行需連結 Vercel 帳號（依照提示操作）
+vercel login
 
-第二步：設定 API Key
-請在根目錄建立 .env 檔案，內容如下：
-
-GEMINI_API_KEY='你的金鑰' or VITE_GEMINI_API_KEY='你的key'
-
-第三步：啟動專案
-在專案根目錄執行以下指令：
-
+# 4. 啟動本地開發伺服器
 vercel dev
+```
 
-啟動後，請使用終端機顯示的網址（通常是 http://localhost:3000）進行測試。
+啟動後瀏覽器開啟 `http://localhost:3000`。
+
+> **為什麼不能用 `npm run dev`？**  
+> `vite dev` 無法執行 `/api/` 下的 Serverless Functions，音檔上傳和 AI 功能會全部失敗。必須使用 `vercel dev`。
+
+### 首次連結專案（`.vercel` 目錄不存在時）
+
+```powershell
+# 刪除失效的舊設定（若有）
+Remove-Item -Recurse -Force .vercel
+
+# 重新執行，CLI 會引導建立新專案
+vercel dev
+```
+
+| 提示 | 建議回答 |
+|------|---------|
+| Set up and deploy? | `Y` |
+| Which scope? | 選自己的帳號 |
+| Link to existing project? | `N` |
+| Project name? | 隨意命名 |
+| In which directory? | `.`（直接 Enter）|
+
+---
+
+## 常見問題排解
+
+### `vercel dev` 報錯：Could not retrieve Project Settings
+
+`.vercel` 連結失效（通常是 clone 別人專案後發生）。
+
+```powershell
+Remove-Item -Recurse -Force .vercel
+vercel dev
+```
+
+### 音檔上傳失敗：Gemini note generation failed
+
+Gemini 服務繁忙（503）。已有自動重試機制，等待約 10 秒後重試一次即可。
+
+### 音檔上傳失敗：Deepgram returned empty transcript
+
+可能原因：
+- 音檔沒有語音內容
+- 音檔格式損壞
+- 建議先用 `.mp3` 测試確認流程是否正常
+
+### PDF 都看到「[PDF 沒有抽到文字]」
+
+掃描版 PDF（圖片 PDF）無法抽取文字。請改用含文字層的 PDF。
+
+---
+
+## 分支說明
+
+| Branch | 說明 |
+|--------|------|
+| `main` | 穩定版主幹，所有 PR 的合併目標 |
+| `feature/YTHuang` | 音檔匯入、PDF 輔助、進度條、隱私修復 |
+
