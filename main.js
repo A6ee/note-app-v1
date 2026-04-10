@@ -13,7 +13,7 @@ let activeListTab = "note";
 let currentSessionScore = { correct: 0, total: 0 };
 // env
 // 改到api/gemini.js中串接api key
-//let selectedTrashNotes = new Set();
+let selectedTrashNotes = new Set();
 let selectedReviewNotes = new Set();
 
 let lastActivePageId = "page-home";
@@ -350,10 +350,19 @@ let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
 let currentNoteData = notesLibrary?.[0] || null;
 
 let appSettings = JSON.parse(localStorage.getItem("president_settings")) || {
-  nickname: "同學",
+  nickname: "皮皮同學",
   avatarSeed: "Fox",
   noteStyle: "standard",
+  aiStyle: "default",
 };
+
+if (!appSettings.aiStyle) {
+  appSettings.aiStyle = "default";
+}
+
+if (!localStorage.getItem("president_settings")) {
+  localStorage.setItem("president_settings", JSON.stringify(appSettings));
+}
 
 const animalAvatars = [
   "Fox",
@@ -467,7 +476,11 @@ function renderAvatarChoices(targetId = "modal-avatar-grid") {
 
 function loadSettingsToUI() {
   const nickInput = safeEl("settings-nickname");
+  const styleSelect = safeEl("settings-ai-style");
   const previewImg = document.querySelector("#settings-avatar-preview img");
+  if (styleSelect) {
+    styleSelect.value = appSettings.aiStyle || "default";
+  }
 
   if (nickInput) nickInput.value = appSettings.nickname;
 
@@ -481,7 +494,7 @@ function loadSettingsToUI() {
 function saveSettingsFromUI() {
   appSettings.nickname = safeEl("settings-nickname")?.value || "Memo";
   appSettings.avatarSeed = tempSelectedAvatar;
-
+  appSettings.aiStyle = safeEl("settings-ai-style")?.value || "default";
   localStorage.setItem("president_settings", JSON.stringify(appSettings));
   updateHomeGreeting();
   alert("您的個人檔案已同步更新 ✨");
@@ -549,45 +562,6 @@ function initRecognition() {
     }, 600);
   };
 }
-recognition = new window.webkitSpeechRecognition();
-recognition.continuous = true;
-recognition.interimResults = true;
-recognition.lang = "zh-TW";
-
-recognition.onresult = (event) => {
-  let finalCombined = "";
-  let interimCombined = "";
-
-  for (let i = 0; i < event.results.length; ++i) {
-    if (event.results[i].isFinal) {
-      finalCombined += event.results[i][0].transcript;
-    } else {
-      interimCombined += event.results[i][0].transcript;
-    }
-  }
-
-  fullTranscript = finalCombined;
-  lastInterim = interimCombined;
-
-  const displayResult = (finalCombined + interimCombined).trim();
-
-  const el = safeEl("live-transcript");
-  if (el) {
-    el.innerText = displayResult || "Memo助手正在聽課...";
-  }
-
-  localStorage.setItem("temp_transcript", displayResult);
-};
-
-recognition.onend = () => {
-  if (!isRecording) return;
-  if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
-  recognitionRestartTimer = setTimeout(() => {
-    try {
-      recognition.start();
-    } catch (e) {}
-  }, 500);
-};
 
 function startRecordPage() {
   fullTranscript = "";
@@ -668,7 +642,11 @@ async function stopRecording() {
   };
 
   try {
-    const data = await callGemini(prompt, schema);
+    const data = await callGemini(
+      prompt,
+      schema,
+      appSettings.aiStyle || "default",
+    );
 
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     const clean = String(raw)
@@ -708,6 +686,8 @@ async function stopRecording() {
  */
 
 async function callGemini(prompt, responseSchema = null, retryCount = 0) {
+  const styleToUse = appSettings?.aiStyle || "default";
+
   try {
     const response = await fetch("/api/gemini", {
       method: "POST",
@@ -715,6 +695,7 @@ async function callGemini(prompt, responseSchema = null, retryCount = 0) {
       body: JSON.stringify({
         prompt: prompt,
         schema: responseSchema,
+        aiStyle: styleToUse || "default",
       }),
     });
 
