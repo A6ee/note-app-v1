@@ -22,6 +22,7 @@ let lastActivePageId = "page-home";
 
 let timerInterval;
 let seconds = 0;
+let recordingStartedAtMs = 0;
 let recognition;
 let fullTranscript = "";
 let isRecording = false;
@@ -33,20 +34,49 @@ let recognitionRestartTimer = null;
 let recognitionEndFailCount = 0;
 let lastInterim = "";
 let finalizedSpeechTimeline = [];
+let lastTimelineAssignedSecond = -1;
+let pendingSpeechAnchorSecond = null;
 let lastResultAt = 0;
 let lastRestartAt = 0;
 let lastErrorCode = "";
 let noResultWatchdogTimer = null;
 let startTimeoutTimer = null;
+let isRecoveryHintVisible = false;
+let recoveryAckTimer = null;
+let recoveryHideTimer = null;
+let recoveryAttemptToken = 0;
+let awaitingRecoveryAckToken = 0;
+let recoveryRestartShownAt = 0;
+let lastWatchdogObservedResultAt = 0;
+let watchdogMissWhileSpeakingCount = 0;
+let vadAudioContext = null;
+let vadStream = null;
+let vadAnalyser = null;
+let vadSourceNode = null;
+let vadSampleTimer = null;
+let vadReady = false;
+let vadNoiseFloorRms = 0.004;
+let vadLastVoiceAt = 0;
 
 const TEMP_TRANSCRIPT_KEY = "temp_transcript";
 const RECOGNITION_MAX_RESTARTS = 5;
-const NO_RESULT_TIMEOUT_MS = 20000;
-const WATCHDOG_INTERVAL_MS = 2000;
-const RESTART_GRACE_MS = 5000;
+const NO_RESULT_TIMEOUT_MS = 12000;
+const WATCHDOG_INTERVAL_MS = 1500;
+const RESTART_GRACE_MS = 2500;
 const HARD_REBUILD_AFTER_FAILS = 3;
 const PERIODIC_TRANSCRIPT_PERSIST_MS = 5000;
 const RECOGNITION_START_TIMEOUT_MS = 3000;
+const ONEND_RESTART_DELAY_MS = 500;
+const RECOVERY_MONITOR_DELAY_MS = 6000;
+const RECOVERY_SUCCESS_AUTO_HIDE_MS = 1000;
+const RECOVERY_RESTART_MIN_VISIBLE_MS = 700;
+const VAD_SAMPLE_INTERVAL_MS = 250;
+const VAD_CALIBRATION_MS = 1500;
+const VAD_SPEECH_HOLD_MS = 1800;
+const VAD_MIN_RMS = 0.012;
+const VAD_NOISE_MULTIPLIER = 2.2;
+const TIMELINE_MERGE_GAP_SECONDS = 1;
+const TIMELINE_SHORT_TEXT_MERGE_THRESHOLD = 24;
 
 const STORAGE_KEYS = {
   QUIZ_HISTORY: "president_quiz_history",
@@ -757,6 +787,197 @@ function stopNoResultWatchdog() {
   noResultWatchdogTimer = null;
 }
 
+function clearRecoveryAckTimer() {
+  if (!recoveryAckTimer) return;
+  clearTimeout(recoveryAckTimer);
+  recoveryAckTimer = null;
+}
+
+function clearRecoveryHideTimer() {
+  if (!recoveryHideTimer) return;
+  clearTimeout(recoveryHideTimer);
+  recoveryHideTimer = null;
+}
+
+function showRecoveryHint(text, autoHideMs = 0) {
+  const recoveryEl = safeEl("record-recovery-status");
+  if (recoveryEl) {
+    recoveryEl.innerText = text;
+    recoveryEl.classList.remove("hidden");
+  }
+
+  isRecoveryHintVisible = true;
+  clearRecoveryHideTimer();
+
+  if (autoHideMs > 0) {
+    recoveryHideTimer = setTimeout(() => {
+      const el = safeEl("record-recovery-status");
+      if (el) el.classList.add("hidden");
+      isRecoveryHintVisible = false;
+      recoveryHideTimer = null;
+    }, autoHideMs);
+  }
+}
+
+function hideRecoveryHint() {
+  clearRecoveryHideTimer();
+  const recoveryEl = safeEl("record-recovery-status");
+  if (recoveryEl) recoveryEl.classList.add("hidden");
+  isRecoveryHintVisible = false;
+}
+
+function markRecoveryMonitoring() {
+  if (awaitingRecoveryAckToken !== 0) return;
+  showRecoveryHint("收音暫時中斷，正在重新連線...");
+}
+
+function markRecoveryRestarting(message = "收音暫時中斷，正在重新連線...") {
+  recoveryAttemptToken += 1;
+  awaitingRecoveryAckToken = recoveryAttemptToken;
+  recoveryRestartShownAt = Date.now();
+  showRecoveryHint(message);
+}
+
+function markRecoveryRestarted() {
+  if (awaitingRecoveryAckToken === 0) return;
+  awaitingRecoveryAckToken = 0;
+  clearRecoveryAckTimer();
+  const elapsed = Date.now() - recoveryRestartShownAt;
+  const remain = Math.max(0, RECOVERY_RESTART_MIN_VISIBLE_MS - elapsed);
+
+  if (remain > 0) {
+    setTimeout(() => {
+      if (!isRecording) return;
+      showRecoveryHint("收音已恢復", RECOVERY_SUCCESS_AUTO_HIDE_MS);
+    }, remain);
+    return;
+  }
+
+  showRecoveryHint("收音已恢復", RECOVERY_SUCCESS_AUTO_HIDE_MS);
+}
+
+function resetRecoveryState() {
+  awaitingRecoveryAckToken = 0;
+  recoveryAttemptToken = 0;
+  recoveryRestartShownAt = 0;
+  watchdogMissWhileSpeakingCount = 0;
+  clearRecoveryAckTimer();
+  hideRecoveryHint();
+}
+
+async function startVoiceActivityMonitor() {
+  stopVoiceActivityMonitor();
+
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  const canUseVAD = !!(AudioContextCtor && navigator.mediaDevices?.getUserMedia);
+  if (!canUseVAD) {
+    vadReady = false;
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
+
+    if (!isRecording) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+
+    vadAudioContext = new AudioContextCtor();
+    if (vadAudioContext.state === "suspended") {
+      await vadAudioContext.resume().catch(() => {});
+    }
+
+    vadStream = stream;
+    vadSourceNode = vadAudioContext.createMediaStreamSource(stream);
+    vadAnalyser = vadAudioContext.createAnalyser();
+    vadAnalyser.fftSize = 1024;
+    vadAnalyser.smoothingTimeConstant = 0.65;
+    vadSourceNode.connect(vadAnalyser);
+
+    const samples = new Float32Array(vadAnalyser.fftSize);
+    const calibration = [];
+    const startAt = Date.now();
+    vadReady = false;
+    vadNoiseFloorRms = 0.004;
+    vadLastVoiceAt = 0;
+
+    vadSampleTimer = setInterval(() => {
+      if (!vadAnalyser) return;
+
+      vadAnalyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (let i = 0; i < samples.length; i += 1) {
+        const v = samples[i];
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / samples.length);
+      const now = Date.now();
+
+      if (!vadReady) {
+        calibration.push(rms);
+        if (now - startAt >= VAD_CALIBRATION_MS) {
+          const avg = calibration.reduce((acc, v) => acc + v, 0) / Math.max(1, calibration.length);
+          vadNoiseFloorRms = Math.max(0.003, avg || 0.003);
+          vadReady = true;
+        }
+      }
+
+      const threshold = Math.max(VAD_MIN_RMS, vadNoiseFloorRms * VAD_NOISE_MULTIPLIER);
+      if (rms >= threshold) {
+        vadLastVoiceAt = now;
+      }
+    }, VAD_SAMPLE_INTERVAL_MS);
+  } catch (err) {
+    // Fallback to legacy behavior when VAD init fails.
+    vadReady = false;
+    console.warn("VAD init failed, fallback to result-only watchdog:", err);
+  }
+}
+
+function stopVoiceActivityMonitor() {
+  if (vadSampleTimer) {
+    clearInterval(vadSampleTimer);
+    vadSampleTimer = null;
+  }
+
+  if (vadSourceNode) {
+    try {
+      vadSourceNode.disconnect();
+    } catch (_) {}
+    vadSourceNode = null;
+  }
+
+  vadAnalyser = null;
+
+  if (vadStream) {
+    vadStream.getTracks().forEach((track) => track.stop());
+    vadStream = null;
+  }
+
+  if (vadAudioContext) {
+    void vadAudioContext.close().catch(() => {});
+    vadAudioContext = null;
+  }
+
+  vadReady = false;
+  vadNoiseFloorRms = 0.004;
+  vadLastVoiceAt = 0;
+}
+
+function isLikelySpeakingNow(now = Date.now()) {
+  // If VAD is unavailable, keep legacy restart behavior for safety.
+  if (!vadReady) return true;
+  return now - vadLastVoiceAt <= VAD_SPEECH_HOLD_MS;
+}
+
 function hardRebuildRecognition() {
   // Rebuild recognition instance after repeated failures to recover bad internal state.
   recognition = null;
@@ -768,15 +989,34 @@ function hardRebuildRecognition() {
 
 function startNoResultWatchdog() {
   stopNoResultWatchdog();
+  lastWatchdogObservedResultAt = lastResultAt;
+  watchdogMissWhileSpeakingCount = 0;
 
   noResultWatchdogTimer = setInterval(() => {
     if (!isRecording || isStoppingRecognition || !recognition) return;
 
     const now = Date.now();
-    if (now - lastResultAt <= NO_RESULT_TIMEOUT_MS) return;
+    const likelySpeaking = isLikelySpeakingNow(now);
+    const hasTranscriptUpdated = lastResultAt > lastWatchdogObservedResultAt;
+    lastWatchdogObservedResultAt = lastResultAt;
+
+    // Immediate restart path: speaking is likely, but transcript stream is stale.
+    if (!likelySpeaking) {
+      watchdogMissWhileSpeakingCount = 0;
+      return;
+    }
+    if (hasTranscriptUpdated) {
+      watchdogMissWhileSpeakingCount = 0;
+      return;
+    }
+
+    watchdogMissWhileSpeakingCount += 1;
+    if (watchdogMissWhileSpeakingCount < 2) return;
     if (now - lastRestartAt <= RESTART_GRACE_MS) return;
+    watchdogMissWhileSpeakingCount = 0;
 
     // Soft restart only: stop then start, and persist first to reduce loss on interruption.
+    markRecoveryRestarting("收音暫時中斷，正在重新連線...");
     persistTempTranscript(getTranscriptText());
     stopRecognitionSafely();
 
@@ -786,7 +1026,7 @@ function startNoResultWatchdog() {
       if (!ok) {
         console.warn("Watchdog soft restart start() failed");
       }
-    }, 700);
+    }, ONEND_RESTART_DELAY_MS);
   }, WATCHDOG_INTERVAL_MS);
 }
 
@@ -882,6 +1122,74 @@ function splitTranscriptIntoReadableChunks(text, maxChars = 28, minChars = 14) {
   return chunks;
 }
 
+function getElapsedRecordingSeconds() {
+  if (recordingStartedAtMs > 0) {
+    return Math.max(0, Math.floor((Date.now() - recordingStartedAtMs) / 1000));
+  }
+  return Math.max(0, Math.floor(seconds || 0));
+}
+
+function mergeTimelineSegmentsForDisplay(timelineSegments) {
+  const merged = [];
+
+  timelineSegments.forEach((item) => {
+    if (merged.length === 0) {
+      merged.push({ second: item.second, text: item.text });
+      return;
+    }
+
+    const prev = merged[merged.length - 1];
+    const gap = item.second - prev.second;
+    const shouldMergeSameSecond = gap === 0;
+    const shouldMergeDenseShort =
+      gap > 0
+      && gap <= TIMELINE_MERGE_GAP_SECONDS
+      && prev.text.length < TIMELINE_SHORT_TEXT_MERGE_THRESHOLD;
+
+    if (shouldMergeSameSecond || shouldMergeDenseShort) {
+      prev.text = `${prev.text} ${item.text}`.replace(/\s+/g, " ").trim();
+      return;
+    }
+
+    merged.push({ second: item.second, text: item.text });
+  });
+
+  return merged;
+}
+
+function appendFinalChunksToTimeline(finalChunks, currentSecond, anchorSecond = null) {
+  if (!Array.isArray(finalChunks) || finalChunks.length === 0) return;
+
+  const lastItemSecond = finalizedSpeechTimeline.length > 0
+    ? Math.floor(Number(finalizedSpeechTimeline[finalizedSpeechTimeline.length - 1]?.second) || -1)
+    : -1;
+  const monotonicBase = Math.max(lastTimelineAssignedSecond, lastItemSecond);
+
+  const safeCurrentSecond = Math.max(0, Math.floor(Number(currentSecond) || 0));
+  const safeAnchorSecond = Number.isFinite(Number(anchorSecond))
+    ? Math.max(0, Math.floor(Number(anchorSecond)))
+    : null;
+
+  const spreadStart = safeAnchorSecond === null
+    ? Math.max(0, safeCurrentSecond - finalChunks.length + 1, monotonicBase + 1)
+    : Math.max(0, Math.min(safeAnchorSecond, safeCurrentSecond), monotonicBase + 1);
+  const spreadEnd = Math.max(spreadStart, safeCurrentSecond);
+  const spreadRange = spreadEnd - spreadStart;
+  const denom = Math.max(1, finalChunks.length - 1);
+  let cursorSecond = monotonicBase;
+
+  finalChunks.forEach((chunk, idx) => {
+    const mapped = spreadStart + Math.round((idx * spreadRange) / denom);
+    const sec = Math.max(cursorSecond + 1, mapped);
+    finalizedSpeechTimeline.push({
+      second: sec,
+      text: chunk,
+    });
+    cursorSecond = sec;
+  });
+  lastTimelineAssignedSecond = cursorSecond;
+}
+
 function initRecognition() {
   if (!("webkitSpeechRecognition" in window)) {
     console.warn("This browser does not support webkitSpeechRecognition.");
@@ -902,23 +1210,37 @@ function initRecognition() {
     recognitionEndFailCount = 0;
     lastRestartAt = Date.now();
     lastErrorCode = "";
+    markRecoveryRestarted();
+    if (isRecording && recordingStartedAtMs === 0) {
+      recordingStartedAtMs = Date.now();
+    }
   };
 
   recognition.onresult = (event) => {
     lastResultAt = Date.now();
+    if (awaitingRecoveryAckToken === 0 && isRecoveryHintVisible) {
+      hideRecoveryHint();
+    }
     let interim = "";
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       const piece = event.results[i][0]?.transcript || "";
       if (event.results[i].isFinal) {
         fullTranscript += piece;
         const finalChunks = splitTranscriptIntoReadableChunks(piece);
-        finalChunks.forEach((chunk) => {
-          finalizedSpeechTimeline.push({
-            second: Math.max(0, Math.floor(seconds || 0)),
-            text: chunk,
-          });
-        });
-      } else interim += piece;
+        const anchorSecond = pendingSpeechAnchorSecond;
+        appendFinalChunksToTimeline(
+          finalChunks,
+          getElapsedRecordingSeconds(),
+          anchorSecond,
+        );
+        pendingSpeechAnchorSecond = null;
+        console.log("finalizedSpeechTimeline seconds:", finalizedSpeechTimeline.map((item, index) => ({ index, second: item.second })));
+      } else {
+        interim += piece;
+        if (piece.trim() && pendingSpeechAnchorSecond === null) {
+          pendingSpeechAnchorSecond = getElapsedRecordingSeconds();
+        }
+      }
     }
 
     lastInterim = interim;
@@ -983,6 +1305,7 @@ function initRecognition() {
 
     recognitionRestartTimer = setTimeout(() => {
       recognitionEndFailCount += 1;
+      markRecoveryRestarting("收音暫時中斷，正在重新連線...");
       const shouldHardRebuild = recognitionEndFailCount >= HARD_REBUILD_AFTER_FAILS;
       if (shouldHardRebuild) {
         hardRebuildRecognition();
@@ -994,7 +1317,7 @@ function initRecognition() {
           `Recognition restart attempt ${recognitionEndFailCount}/${RECOGNITION_MAX_RESTARTS} failed`,
         );
       }
-    }, 700);
+    }, ONEND_RESTART_DELAY_MS);
   };
 }
 
@@ -1006,6 +1329,10 @@ function startRecordPage() {
   fullTranscript = "";
   lastInterim = "";
   finalizedSpeechTimeline = [];
+  lastTimelineAssignedSecond = -1;
+  pendingSpeechAnchorSecond = null;
+  recordingStartedAtMs = 0;
+  resetRecoveryState();
   persistTempTranscript("");
   seconds = 0;
   isRecording = true;
@@ -1013,11 +1340,16 @@ function startRecordPage() {
   lastErrorCode = "";
   lastResultAt = Date.now();
   lastRestartAt = Date.now();
+  lastWatchdogObservedResultAt = lastResultAt;
+  isRecoveryHintVisible = false;
+  stopVoiceActivityMonitor();
 
   const timerEl = safeEl("record-timer");
   const liveEl = safeEl("live-transcript");
+  const recoveryEl = safeEl("record-recovery-status");
   if (timerEl) timerEl.innerText = "00:00";
   if (liveEl) liveEl.innerText = "正在聽課中...";
+  if (recoveryEl) recoveryEl.classList.add("hidden");
 
   window.navigateTo("page-record");
 
@@ -1032,6 +1364,7 @@ function startRecordPage() {
   }
 
   startNoResultWatchdog();
+  void startVoiceActivityMonitor();
 
   clearInterval(timerInterval);
   timerInterval = setInterval(() => {
@@ -1050,6 +1383,9 @@ function startRecordPage() {
 
 function cancelRecording() {
   isRecording = false;
+  recordingStartedAtMs = 0;
+  resetRecoveryState();
+  stopVoiceActivityMonitor();
   stopNoResultWatchdog();
   clearRecognitionStartTimeout();
   stopRecognitionSafely();
@@ -1092,7 +1428,8 @@ function buildSegmentsFromTranscript(
     : [];
 
   if (timelineSegments.length > 0) {
-    return timelineSegments.map((item) => ({
+    const mergedTimeline = mergeTimelineSegmentsForDisplay(timelineSegments);
+    return mergedTimeline.map((item) => ({
       time: formatSecondsToTimestamp(item.second),
       text: item.text,
     }));
@@ -1128,14 +1465,26 @@ function buildSegmentsFromTranscript(
 }
 
 async function stopRecording() {
+
   if (isGeneratingSummary) return;
 
   isGeneratingSummary = true;
   isRecording = false;
+  recordingStartedAtMs = 0;
+  resetRecoveryState();
+  stopVoiceActivityMonitor();
   stopNoResultWatchdog();
   clearRecognitionStartTimeout();
   stopRecognitionSafely();
   clearInterval(timerInterval);
+
+  const trailingInterim = String(lastInterim || "").trim();
+  if (trailingInterim) {
+    const trailingChunks = splitTranscriptIntoReadableChunks(trailingInterim);
+    appendFinalChunksToTimeline(trailingChunks, getElapsedRecordingSeconds(), pendingSpeechAnchorSecond);
+    pendingSpeechAnchorSecond = null;
+    lastInterim = "";
+  }
 
   const finalTranscript = getTranscriptText();
   persistTempTranscript(finalTranscript || "");
@@ -1180,11 +1529,50 @@ async function stopRecording() {
     },
   };
 
+  let result;
   try {
     const data = await callGemini(prompt, schema, appSettings.aiStyle || "default");
     const raw = extractAiText(data);
-    const result = normalizeAiNotePayload(safeParseAiJson(raw));
+    result = normalizeAiNotePayload(safeParseAiJson(raw));
+  } catch (err) {
+    // Only enter fallback after callGemini built-in retries are exhausted.
+    console.error("摘要生成最終失敗:", err);
 
+    try {
+      const fallbackSegments = Array.isArray(speechSegments) && speechSegments.length > 0
+        ? speechSegments
+        : [{ time: "00:00", text: finalTranscript }];
+
+      const fallbackNote = {
+        id: `${Date.now()}-fallback`,
+        title: "逐字稿暫存筆記",
+        intro: "AI 摘要失敗，已先保留逐字稿內容。",
+        category: "未分類",
+        date: `${new Date().getMonth() + 1} / ${new Date().getDate()}`,
+        duration: finalDurationText,
+        sections: [],
+        segments: fallbackSegments,
+        rawTranscript: finalTranscript,
+        isFavorite: false,
+        isDeleted: false,
+      };
+
+      const nextNotes = await dataService.createNote(fallbackNote);
+      notesLibrary = Array.isArray(nextNotes) ? nextNotes : [fallbackNote, ...notesLibrary];
+      window.loadNoteDetails(fallbackNote.id);
+      void storage.removeItem(STORAGE_KEYS.TEMP_TRANSCRIPT);
+      alert("AI 摘要失敗，已建立逐字稿暫存筆記。可先查看逐字稿內容。");
+    } catch (fallbackErr) {
+      console.error("Fallback note 建立失敗:", fallbackErr);
+      alert(`生成失敗，但逐字稿已為您暫存。\n原因：${err.message || "未知錯誤"}`);
+      window.navigateTo("page-list");
+    }
+
+    isGeneratingSummary = false;
+    return;
+  }
+
+  try {
     const newNote = {
       ...result,
       id: Date.now().toString(),
@@ -1199,12 +1587,11 @@ async function stopRecording() {
 
     const nextNotes = await dataService.createNote(newNote);
     notesLibrary = Array.isArray(nextNotes) ? nextNotes : [newNote, ...notesLibrary];
-
     window.loadNoteDetails(newNote.id);
     void storage.removeItem(STORAGE_KEYS.TEMP_TRANSCRIPT);
-  } catch (err) {
-    console.error("處理失敗:", err);
-    alert(`生成失敗，但逐字稿已為您暫存。\n原因：${err.message || "未知錯誤"}`);
+  } catch (persistErr) {
+    console.error("摘要成功但筆記儲存失敗:", persistErr);
+    alert(`筆記儲存失敗，但逐字稿已為您暫存。\n原因：${persistErr.message || "未知錯誤"}`);
     window.navigateTo("page-list");
   } finally {
     isGeneratingSummary = false;
