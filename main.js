@@ -1642,16 +1642,19 @@ async function callGemini(
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 25000);
+  const requestPayload = {
+    prompt: prompt,
+    aiStyle: styleToUse || "default",
+  };
+  if (responseSchema && typeof responseSchema === "object" && !Array.isArray(responseSchema)) {
+    requestPayload.schema = responseSchema;
+  }
 
   try {
     const response = await fetch("/api/gemini", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: prompt,
-        schema: responseSchema,
-        aiStyle: styleToUse || "default",
-      }),
+      body: JSON.stringify(requestPayload),
       signal: controller.signal,
     });
 
