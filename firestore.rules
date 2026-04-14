@@ -1,0 +1,147 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function isShortString(value, maxLen) {
+      return value is string && value.size() > 0 && value.size() <= maxLen;
+    }
+
+    function isOptionalString(value, maxLen) {
+      return value == null || (value is string && value.size() <= maxLen);
+    }
+
+    function isOptionalInt(value) {
+      return value == null || value is int;
+    }
+
+    function hasOnlyNoteKeys(data) {
+      return data.keys().hasOnly([
+        'id',
+        'userId',
+        'title',
+        'intro',
+        'date',
+        'duration',
+        'category',
+        'sections',
+        'segments',
+        'isFavorite',
+        'isDeleted',
+        'deletedAt',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    function isValidNote(data, userId, noteId) {
+      return hasOnlyNoteKeys(data)
+        && isShortString(data.id, 64)
+        && data.id == noteId
+        && data.userId == userId
+        && isShortString(data.title, 120)
+        && isOptionalString(data.intro, 4000)
+        && isOptionalString(data.date, 20)
+        && isOptionalString(data.duration, 20)
+        && isOptionalString(data.category, 40)
+        && data.sections is list
+        && data.sections.size() <= 100
+        && data.segments is list
+        && data.segments.size() <= 1000
+        && data.isFavorite is bool
+        && data.isDeleted is bool
+        && data.createdAt is int
+        && data.updatedAt is int
+        && isOptionalInt(data.deletedAt);
+    }
+
+    function hasOnlyQuizHistoryKeys(data) {
+      return data.keys().hasOnly([
+        'id',
+        'userId',
+        'noteId',
+        'category',
+        'type',
+        'isCorrect',
+        'timestamp',
+        'updatedAt'
+      ]);
+    }
+
+    function isValidQuizHistory(data, userId, itemId) {
+      return hasOnlyQuizHistoryKeys(data)
+        && isShortString(data.id, 128)
+        && data.id == itemId
+        && data.userId == userId
+        && isOptionalString(data.noteId, 64)
+        && isOptionalString(data.category, 40)
+        && isOptionalString(data.type, 16)
+        && data.isCorrect is bool
+        && data.timestamp is int
+        && data.updatedAt is int;
+    }
+
+    function hasOnlyWrongQuestionKeys(data) {
+      return data.keys().hasOnly([
+        'id',
+        'userId',
+        'question',
+        'options',
+        'answer',
+        'type',
+        'level',
+        'nextReviewTime',
+        'updatedAt'
+      ]);
+    }
+
+    function isValidWrongQuestion(data, userId, itemId) {
+      return hasOnlyWrongQuestionKeys(data)
+        && isShortString(data.id, 200)
+        && data.id == itemId
+        && data.userId == userId
+        && isShortString(data.question, 500)
+        && data.options is list
+        && data.options.size() <= 10
+        && isOptionalString(data.answer, 200)
+        && isOptionalString(data.type, 16)
+        && data.level is int
+        && data.level >= 1
+        && data.nextReviewTime is int
+        && data.updatedAt is int;
+    }
+
+    match /users/{userId}/notes/{noteId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidNote(request.resource.data, userId, noteId);
+      allow update: if isOwner(userId)
+        && resource.data.userId == userId
+        && isValidNote(request.resource.data, userId, noteId);
+      allow delete: if isOwner(userId);
+    }
+
+    match /users/{userId}/learning_quiz_history/{itemId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidQuizHistory(request.resource.data, userId, itemId);
+      allow update: if isOwner(userId)
+        && resource.data.userId == userId
+        && isValidQuizHistory(request.resource.data, userId, itemId);
+      allow delete: if isOwner(userId);
+    }
+
+    match /users/{userId}/learning_wrong_questions/{itemId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidWrongQuestion(request.resource.data, userId, itemId);
+      allow update: if isOwner(userId)
+        && resource.data.userId == userId
+        && isValidWrongQuestion(request.resource.data, userId, itemId);
+      allow delete: if isOwner(userId);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

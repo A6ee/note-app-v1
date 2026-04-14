@@ -19,20 +19,7 @@
       rel="stylesheet"
     />
 
-    <script>
-      tailwind = {
-        config: {
-          theme: {
-            extend: {
-              colors: {
-                brand: "#13b5b1",
-                "brand-light": "#f0f9f9",
-              },
-            },
-          },
-        },
-      };
-    </script>
+    <script src="/tailwind-config.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link
       rel="stylesheet"
@@ -80,17 +67,12 @@
           <div class="home-content px-6 pt-6">
             <div class="flex items-end gap-3 mb-10">
               <div class="relative flex-shrink-0">
-                <div
-                  class="w-14 h-18 bg-gray-100 rounded-b-xl overflow-hidden border-2 border-white shadow-md"
-                >
-                  <img
-                    src="https://api.dicebear.com/7.x/bottts/svg?seed=Felix"
-                    class="w-full h-full"
-                    alt="Memo助手"
-                  />
+                <div class="logo-container border-2 border-white shadow-md">
+                  <img src="Memo-10.png" alt="Memo助手" class="logo-image" />
                 </div>
+
                 <div
-                  class="absolute -bottom-1 left-0 right-0 bg-white border border-[#13B5B1]/20 text-[8px] text-[#13B5B1] py-0.5 text-center font-black rounded-full"
+                  class="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-white border border-[#13B5B1]/20 text-[8px] text-[#13B5B1] px-2 py-0.5 text-center font-black rounded-full whitespace-nowrap shadow-sm"
                 >
                   Memo助手
                 </div>
@@ -964,6 +946,25 @@
                     </div>
                   </div>
                 </div>
+              </div>
+            </section>
+
+            <section class="mb-8">
+              <p
+                class="text-[10px] text-gray-300 font-black tracking-widest uppercase mb-4 ml-1"
+              >
+                AI 筆記風格
+              </p>
+              <div class="mt-6">
+                <select
+                  id="settings-ai-style"
+                  class="w-full mt-1 bg-gray-50 border-none rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-1 focus:ring-[#13B5B1] appearance-none"
+                >
+                  <option value="default">Memo 助手 (推薦)</option>
+                  <option value="academic">專業詳細</option>
+                  <option value="minimalist">重點精煉</option>
+                  <option value="storyteller">淺顯易懂</option>
+                </select>
               </div>
             </section>
 

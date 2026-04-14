@@ -73,6 +73,26 @@
 修改方式： fetch(url, { ... }) 增加 signal: AbortSignal.timeout(20000)
 問題原因： Vercel serverless 有 30s hard limit，後端若沒有自己的超時防護，會被平台強制終止而非優雅結束，導致前端收不到正常的錯誤回應；20s 確保在 30s 之前完成收斂
 
+[資安進度盤點]
+原本的問題：前端 `innerHTML` 渲染仍存在 XSS 風險。
+更新版本：目前高風險動態輸出點已完成 escapeHtml 與格式化 helper 套用，原本報告列出的主要注入面已大幅收斂。
+修改方式：main.js 已將筆記內容、回收站、複習清單、測驗題目、Modal 提示、學習儀表板、填空題回饋等動態字串改為轉義後再輸出；僅保留受控模板與靜態 HTML。
+問題原因：此項就「原報告中尚未解決的高風險輸出點」而言，目前可視為程式層已處理；但後續若新增 `innerHTML` sink，仍必須沿用同一套輸出消毒原則。
+
+原本的問題：尚未全面導入 CSP / 安全標頭機制。
+更新版本：已新增 vercel.json 完整安全標頭策略，包含 CSP、frame-ancestors、script-src、connect-src、HSTS、COOP、CORP 與 API no-store；Tailwind inline config 已改為本機 `public/tailwind-config.js`，可避免 CSP 上線後白屏。
+修改方式：index.html 已移除 Tailwind inline config 並改載入本機 JS；vercel.json 收斂全站與 `/api/*` 的安全標頭與來源白名單；另建立 SECURITY_ROLLOUT_CHECKLIST.md 作為驗收清單。
+問題原因：此項目前屬「程式完成、部署驗證待手動執行」；main.js 原先少數 inline onclick 已改為 data-action 事件委派，現行程式碼已與 CSP 強化方向一致。
+
+原本的問題：Firestore 規則強度不足，僅做 UID 隔離，未限制資料結構與大小。
+更新版本：已完成 firestore.rules 強化版規則，加入 notes、learning_quiz_history、learning_wrong_questions 的欄位白名單、型別、字串長度、陣列上限與 answer 欄位限制。
+修改方式：firestore.rules 新增 `hasOnly*Keys`、`isValid*` 驗證函式，並將 create/update 全數收斂到結構驗證；其他路徑維持 deny all。
+問題原因：此項在規則檔內容上已完成，但 Firestore 規則是否真正生效仍取決於你是否在 Firebase Console 發布，因此目前狀態屬「規則完成、發布待手動執行」。
+
+原本的問題：未導入 Rate Limit / WAF，API 容易被濫用或造成成本風險。
+更新版本：API 已升級為優先使用 Upstash Redis 的持久化限流，並補上 bot user-agent 阻擋、硬封鎖門檻與安全告警 webhook；記憶體限流僅保留為 fallback。WAF / 機器人挑戰策略則改為平台層待啟用項目。
+修改方式：api/gemini.js 新增 `getRedisConfig`、`redisCall`、`checkRateLimitPersistent`、`sendSecurityAlert`、`isBlockedUserAgent`，並在 handler 內統一攔截；SECURITY_ROLLOUT_CHECKLIST.md 補上平台驗證步驟。
+問題原因：此項在應用程式層已明顯前進，但若未設定 `UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN` 與 Vercel Dashboard WAF / Bot Protection，仍不能算完整落地，因此目前狀態屬「程式完成、平台設定待手動執行」。
 
 
 手動驗證項目
@@ -108,5 +128,72 @@ Web Speech API 在不同瀏覽器兼容差異仍存在（目前以 webkitSpeechR
 
 main.js:16 的 selectedTrashNotes 仍是潛在獨立風險，建議下一輪修正。
 
-後端 gemini.js 仍可再加 request body 驗證與上游錯誤分類標準化（本輪未改，以避免擴大風險）。
+後端 gemini.js request body 驗證已補上；後續可再加上游錯誤分類標準化與結構化錯誤碼映射（本輪未改）。
+
+
+
+
+部署前仍需手動設定（原因與步驟）
+目前程式端已完成大部分資安實作（包含 API 驗證、CSP 標頭設定、Firestore 規則檔），
+但仍有幾項必須在雲端平台手動完成，否則會出現「程式已改、正式站未生效」的落差。
+
+1. Firebase Rules 發布（必要）
+原因：
+本地檔案 firestore.rules 已更新，不代表雲端 Firestore 已生效；必須在 Firebase Console 發布。
+
+步驟：
+打開 Firebase Console → Firestore Database → Rules。
+將 firestore.rules 內容貼上（或用 CLI 部署）。
+按 Publish。
+以非本人 UID 測試讀寫，確認被拒絕。
+
+2. Vercel 環境變數設定（必要）
+原因：
+正式部署不會自動讀你電腦本地的 .env，API 在雲端執行時只會
+讀 Vercel Project 的 Environment Variables。
+
+步驟：
+Vercel 專案 → Settings → Environment Variables。
+新增：
+GEMINI_API_KEY
+UPSTASH_REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN
+SECURITY_ALERT_WEBHOOK_URL（選填，做告警用）
+變數至少套用到 Production（建議 Preview、Development 也一併設定）。
+重新部署一次，讓新變數生效。
+
+3. Upstash Redis 參數取得（P2 限流必要）
+原因：
+gemini.js 的平台層持久化限流依賴 Upstash Redis REST；
+未設定會退回記憶體限流（在 serverless 下不穩定）。
+
+步驟：
+到 Upstash 建立 Redis Database。
+在該 Database 的 REST API 區塊取得：
+UPSTASH_REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN
+回 Vercel 填入上述環境變數。
+
+4. 安全標頭生效驗證（必要）
+原因：
+vercel.json 只是設定檔，仍需在正式網域確認回應標頭實際存在。
+
+步驟：
+部署後打開正式站。
+DevTools → Network → 重新整理。
+點第一個 document 請求（不是 css/js）。
+檢查 Response Headers 是否包含：
+Content-Security-Policy
+X-Frame-Options
+Referrer-Policy
+Strict-Transport-Security
+
+5. WAF / Bot 防護（建議，P2）
+原因：
+應用程式內限流只能擋一部分濫用，平台層 WAF 與 Bot 規則才能補齊大流量與惡意流量防護。
+
+步驟：
+Vercel Dashboard 啟用 WAF managed rules。
+對 /api/* 啟用 Bot Protection 或 Challenge。
+設定流量異常告警（含成本異常告警）。
 

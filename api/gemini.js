@@ -1,46 +1,296 @@
 // api/gemini.js
+
+const STYLE_PROMPTS = {
+  default: "你是一位親切且專業的學習助手「Memo助手」，語氣溫暖，重點分布平均。",
+  academic:
+    "你是一位嚴謹的教授，請使用大量專業術語，結構極度嚴密，並加強邏輯推演與學術深度。",
+  minimalist:
+    "你是一位極簡主義筆記專家，請刪除所有冗詞贅句，只保留核心概念與行動清單，文字極度精煉。",
+  storyteller:
+    "你是一位擅長簡化概念的導師，請使用淺顯易懂的語言，多用比喻來解釋複雜概念，讓筆記像故事一樣好讀。",
+};
+
+const REQUEST_LIMIT_WINDOW_MS = 60 * 1000;
+const REQUEST_LIMIT_MAX = 30;
+const REQUEST_HARD_BLOCK_MAX = 120;
+const PROMPT_MAX_LENGTH = 12000;
+const SCHEMA_MAX_LENGTH = 50000;
+const rateLimitBuckets = new Map();
+const BOT_UA_PATTERN = /(bot|crawler|spider|scraper|curl|wget|python-requests|httpclient)/i;
+
+function getClientIp(req) {
+  const forwardedFor = String(req.headers["x-forwarded-for"] || "");
+  return forwardedFor.split(",")[0].trim() || req.socket?.remoteAddress || "unknown";
+}
+
+function getRedisConfig() {
+  const baseUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!baseUrl || !token) return null;
+  return { baseUrl, token };
+}
+
+async function redisCall(baseUrl, token, command, ...args) {
+  const encoded = [command, ...args].map((v) => encodeURIComponent(String(v))).join("/");
+  const url = `${baseUrl}/${encoded}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Redis command failed: ${command}`);
+  }
+
+  const data = await response.json();
+  return data?.result;
+}
+
+async function sendSecurityAlert(payload) {
+  const webhookUrl = process.env.SECURITY_ALERT_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  try {
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // Alert failures should never block API availability.
+  }
+}
+
+function isBlockedUserAgent(req) {
+  const userAgent = String(req.headers["user-agent"] || "");
+  return !userAgent || BOT_UA_PATTERN.test(userAgent);
+}
+
+function setSecurityHeaders(res) {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+}
+
+function isContentTypeJson(req) {
+  const contentType = String(req.headers["content-type"] || "").toLowerCase();
+  return contentType.includes("application/json");
+}
+
+function validateRequestBody(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return "Invalid request body";
+  }
+
+  const { prompt, schema, aiStyle } = body;
+
+  if (typeof prompt !== "string") {
+    return "prompt must be a string";
+  }
+  if (prompt.length > PROMPT_MAX_LENGTH) {
+    return `prompt exceeds ${PROMPT_MAX_LENGTH} characters`;
+  }
+
+  if (schema !== undefined) {
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+      return "schema must be an object";
+    }
+    if (JSON.stringify(schema).length > SCHEMA_MAX_LENGTH) {
+      return "schema is too large";
+    }
+  }
+
+  if (aiStyle !== undefined) {
+    if (typeof aiStyle !== "string") {
+      return "aiStyle must be a string";
+    }
+    if (!(aiStyle in STYLE_PROMPTS)) {
+      return "Unsupported aiStyle";
+    }
+  }
+
+  return null;
+}
+
+function checkRateLimitInMemory(req) {
+  const ip = getClientIp(req);
+
+  const now = Date.now();
+  const bucket = rateLimitBuckets.get(ip);
+
+  if (!bucket || now >= bucket.resetAt) {
+    rateLimitBuckets.set(ip, {
+      count: 1,
+      resetAt: now + REQUEST_LIMIT_WINDOW_MS,
+    });
+    return { allowed: true, retryAfter: 0 };
+  }
+
+  if (bucket.count >= REQUEST_LIMIT_MAX) {
+    const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    return { allowed: false, retryAfter };
+  }
+
+  bucket.count += 1;
+
+  if (rateLimitBuckets.size > 10000) {
+    for (const [key, value] of rateLimitBuckets.entries()) {
+      if (now >= value.resetAt) {
+        rateLimitBuckets.delete(key);
+      }
+    }
+  }
+
+  return { allowed: true, retryAfter: 0 };
+}
+
+async function checkRateLimitPersistent(req) {
+  const redis = getRedisConfig();
+  if (!redis) return null;
+
+  const ip = getClientIp(req);
+  const now = Date.now();
+  const minuteBucket = Math.floor(now / REQUEST_LIMIT_WINDOW_MS);
+  const key = `rl:gemini:${ip}:${minuteBucket}`;
+  const count = Number(
+    await redisCall(redis.baseUrl, redis.token, "INCR", key),
+  );
+
+  if (count === 1) {
+    await redisCall(
+      redis.baseUrl,
+      redis.token,
+      "EXPIRE",
+      key,
+      Math.ceil(REQUEST_LIMIT_WINDOW_MS / 1000) + 1,
+    );
+  }
+
+  const retryAfter = Math.max(
+    1,
+    Math.ceil((REQUEST_LIMIT_WINDOW_MS - (now % REQUEST_LIMIT_WINDOW_MS)) / 1000),
+  );
+
+  if (count > REQUEST_HARD_BLOCK_MAX) {
+    await sendSecurityAlert({
+      type: "hard-rate-limit-block",
+      ip,
+      path: req.url || "/api/gemini",
+      count,
+      ts: new Date().toISOString(),
+    });
+
+    return { allowed: false, retryAfter, reason: "hard-limit" };
+  }
+
+  if (count > REQUEST_LIMIT_MAX) {
+    return { allowed: false, retryAfter, reason: "rate-limit" };
+  }
+
+  return { allowed: true, retryAfter: 0, reason: "ok" };
+}
+
+async function checkRateLimit(req) {
+  try {
+    const persistent = await checkRateLimitPersistent(req);
+    if (persistent) {
+      return persistent;
+    }
+  } catch {
+    // Fallback to in-memory limiter if persistent backend is unavailable.
+  }
+
+  const fallback = checkRateLimitInMemory(req);
+  return {
+    ...fallback,
+    reason: fallback.allowed ? "in-memory-ok" : "in-memory-rate-limit",
+  };
+}
+
 export default async function handler(req, res) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
+  setSecurityHeaders(res);
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  if (!isContentTypeJson(req)) {
+    return res.status(415).json({ error: "Content-Type must be application/json" });
+  }
+
+  if (isBlockedUserAgent(req)) {
+    const ip = getClientIp(req);
+    await sendSecurityAlert({
+      type: "blocked-bot-user-agent",
+      ip,
+      path: req.url || "/api/gemini",
+      userAgent: String(req.headers["user-agent"] || ""),
+      ts: new Date().toISOString(),
+    });
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const limit = await checkRateLimit(req);
+  if (!limit.allowed) {
+    res.setHeader("Retry-After", String(limit.retryAfter));
+    res.setHeader("X-RateLimit-Reason", String(limit.reason || "rate-limit"));
+    return res.status(429).json({ error: "Too many requests" });
+  }
+
+  const bodyError = validateRequestBody(req.body);
+  if (bodyError) {
+    return res.status(400).json({ error: bodyError });
+  }
+
+  const { prompt: userPrompt, schema, aiStyle = "default" } = req.body || {};
+  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(500).json({ error: "Missing API Key" });
+  }
+
+  const systemStyle = STYLE_PROMPTS[aiStyle] || STYLE_PROMPTS.default;
+  const finalPrompt = `${systemStyle}\n\n請依照此風格處理以下要求：\n${userPrompt || ""}`;
+
+  const models = ["gemini-2.5-flash"];
+
+  try {
+    let lastStatus = 500;
+    let lastData = { error: "Internal Server Error" };
+
+    for (let i = 0; i < models.length; i += 1) {
+      const model = models[i];
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+      const googleRes = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(20000),
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: finalPrompt }] }],
+          generationConfig: schema
+            ? {
+                responseMimeType: "application/json",
+                responseSchema: schema,
+              }
+            : {},
+        }),
+      });
+
+      const data = await googleRes.json().catch(() => ({}));
+      if (googleRes.ok) return res.status(200).json(data);
+
+      lastStatus = googleRes.status;
+      lastData = data;
+
+      const canFallback = googleRes.status === 503 && i < models.length - 1;
+      if (!canFallback) {
+        return res.status(googleRes.status).json(data);
+      }
     }
 
-    const { prompt, schema } = req.body;
-
-    // Unified env source: project config is stored in .env.
-    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY; 
-    
-    // error return for missing API key, to avoid silent failures and help with debugging.
-    if (!apiKey) {
-        return res.status(500).json({ error: 'Server configuration error: Missing API Key' });
-    }
-
-    const model = "gemini-2.5-flash"; // model name can be made dynamic in the future if needed, but hardcoding for simplicity now.
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-    try {
-        const googleRes = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: AbortSignal.timeout(20000),
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: schema ? { 
-                    responseMimeType: "application/json", 
-                    responseSchema: schema 
-                } : {}
-            })
-        });
-
-        const data = await googleRes.json();
-
-        if (!googleRes.ok) {
-            console.error("Gemini API Error:", data);
-            return res.status(googleRes.status).json(data);
-        }
-
-        res.status(200).json(data);
-    } catch (error) {
-        console.error("Fetch Error:", error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
+    return res.status(lastStatus).json(lastData);
+  } catch (error) {
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
 }

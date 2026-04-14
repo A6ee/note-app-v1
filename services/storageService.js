@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   WRONG_QUESTIONS: "president_wrong_questions",
   TEMP_TRANSCRIPT: "temp_transcript",
   NOTES_PENDING_QUEUE: "notes_sync_pending_queue_v1",
+  LEARNING_PENDING_QUEUE: "learning_sync_pending_queue_v1",
 };
 
 class StorageService {
@@ -60,6 +61,30 @@ class StorageService {
     await this.set(STORAGE_KEYS.NOTES, notes);
   }
 
+  async getQuizHistory(defaultValue = []) {
+    return this.getWithLegacyFallback(
+      STORAGE_KEYS.QUIZ_HISTORY,
+      defaultValue,
+      (raw) => this.parseJsonSafe(raw, defaultValue),
+    );
+  }
+
+  async saveQuizHistory(quizHistory) {
+    await this.set(STORAGE_KEYS.QUIZ_HISTORY, quizHistory);
+  }
+
+  async getWrongQuestions(defaultValue = []) {
+    return this.getWithLegacyFallback(
+      STORAGE_KEYS.WRONG_QUESTIONS,
+      defaultValue,
+      (raw) => this.parseJsonSafe(raw, defaultValue),
+    );
+  }
+
+  async saveWrongQuestions(wrongQuestions) {
+    await this.set(STORAGE_KEYS.WRONG_QUESTIONS, wrongQuestions);
+  }
+
   async getPendingQueue() {
     return this.getWithLegacyFallback(
       STORAGE_KEYS.NOTES_PENDING_QUEUE,
@@ -77,6 +102,25 @@ class StorageService {
     queue.push(item);
     await this.savePendingQueue(queue);
     console.info("[queue] enqueue:", item.op, item.entityId);
+  }
+
+  async getLearningPendingQueue() {
+    return this.getWithLegacyFallback(
+      STORAGE_KEYS.LEARNING_PENDING_QUEUE,
+      [],
+      (raw) => this.parseJsonSafe(raw, []),
+    );
+  }
+
+  async saveLearningPendingQueue(queue) {
+    await this.set(STORAGE_KEYS.LEARNING_PENDING_QUEUE, queue);
+  }
+
+  async enqueueLearningOp(item) {
+    const queue = await this.getLearningPendingQueue();
+    queue.push(item);
+    await this.saveLearningPendingQueue(queue);
+    console.info("[learning-queue] enqueue:", item.op, item.entityType, item.entityId);
   }
 }
 

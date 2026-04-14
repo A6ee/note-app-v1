@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDocs,
   setDoc,
@@ -22,11 +23,11 @@ class NotesSyncService {
     return {
       id: note.id,
       userId,
-      title: note.title || "¥¼©R¦Wµ§°O",
+      title: note.title || "æœªå‘½åç­†è¨˜",
       intro: note.intro || "",
       date: note.date || `${new Date().getMonth() + 1} / ${new Date().getDate()}`,
       duration: note.duration || "00:00",
-      category: note.category || "¥¼¤ÀÃþ",
+      category: note.category || "æœªåˆ†é¡ž",
       sections: Array.isArray(note.sections) ? note.sections : [],
       segments: Array.isArray(note.segments) ? note.segments : [],
       isFavorite: !!note.isFavorite,
@@ -84,6 +85,25 @@ class NotesSyncService {
     console.info("[sync] upsert cloud note:", normalized.id);
   }
 
+  async deleteCloudNote(userId, noteId) {
+    if (!isFirebaseConfigured || !db || !userId || !noteId) return;
+    const ref = doc(db, "users", userId, "notes", noteId);
+    await deleteDoc(ref);
+    console.info("[sync] hard delete cloud note:", noteId);
+  }
+
+  async clearCloudNotes(userId) {
+    if (!isFirebaseConfigured || !db || !userId) return;
+
+    const ref = collection(db, "users", userId, "notes");
+    const snap = await getDocs(ref);
+    await Promise.all(
+      snap.docs.map((item) => deleteDoc(doc(db, "users", userId, "notes", item.id))),
+    );
+
+    console.info(`[sync] cleared cloud notes: ${snap.docs.length}`);
+  }
+
   async syncPendingQueue(userId) {
     if (!isFirebaseConfigured || !db || !userId) return;
 
@@ -99,14 +119,7 @@ class NotesSyncService {
         }
 
         if (item.op === "delete") {
-          const softDeleted = {
-            ...(item.payload || {}),
-            id: item.entityId,
-            isDeleted: true,
-            deletedAt: item.payload?.deletedAt || Date.now(),
-            updatedAt: item.updatedAt || Date.now(),
-          };
-          await this.upsertCloudNote(userId, softDeleted);
+          await this.deleteCloudNote(userId, item.entityId);
         } else {
           await this.upsertCloudNote(userId, {
             ...(item.payload || {}),

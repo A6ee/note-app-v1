@@ -32,6 +32,7 @@ let isStoppingRecognition = false;
 let recognitionRestartTimer = null;
 let recognitionEndFailCount = 0;
 let lastInterim = "";
+let finalizedSpeechTimeline = [];
 
 const TEMP_TRANSCRIPT_KEY = "temp_transcript";
 const RECOGNITION_MAX_RESTARTS = 5;
@@ -79,11 +80,17 @@ function persistStorageValue(key, value) {
 let quizHistory = [];
 
 function saveQuizRecord(record) {
-  quizHistory.push({
+  const item = {
     ...record,
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     timestamp: Date.now(),
+    updatedAt: Date.now(),
+  };
+  quizHistory.push(item);
+  void dataService.addQuizRecord(item).then((nextHistory) => {
+    quizHistory = Array.isArray(nextHistory) ? nextHistory : quizHistory;
+    renderLearningDashboard();
   });
-  void persistStorageValue(STORAGE_KEYS.QUIZ_HISTORY, quizHistory);
 }
 
 // main.js
@@ -99,7 +106,10 @@ const EB_INTERVALS = [
 ];
 
 function saveWrongQuestions() {
-  void persistStorageValue(STORAGE_KEYS.WRONG_QUESTIONS, wrongQuestions);
+  void dataService.persistWrongQuestions(wrongQuestions).then((nextWrong) => {
+    wrongQuestions = Array.isArray(nextWrong) ? nextWrong : wrongQuestions;
+    renderSRSSection();
+  });
 }
 /**
  * Notes / Settings
@@ -398,6 +408,7 @@ const DEFAULT_APP_SETTINGS = {
   nickname: "同學",
   avatarSeed: "Fox",
   noteStyle: "standard",
+  aiStyle: "default",
 };
 
 let appSettings = { ...DEFAULT_APP_SETTINGS };
@@ -505,22 +516,13 @@ async function signOutFlow() {
 async function initializePersistedState() {
   mountAuthControlsIfNeeded();
 
-  quizHistory = await getStorageValueWithLegacyFallback(
-    STORAGE_KEYS.QUIZ_HISTORY,
-    [],
-    (raw) => parseJsonSafe(raw, []),
-  );
-
-  wrongQuestions = await getStorageValueWithLegacyFallback(
-    STORAGE_KEYS.WRONG_QUESTIONS,
-    [],
-    (raw) => parseJsonSafe(raw, []),
-  );
-
   const loadedNotes = await dataService.init(DEFAULT_NOTES_LIBRARY);
   notesLibrary = Array.isArray(loadedNotes) && loadedNotes.length
     ? loadedNotes
     : JSON.parse(JSON.stringify(DEFAULT_NOTES_LIBRARY));
+
+  quizHistory = dataService.getQuizHistory();
+  wrongQuestions = dataService.getWrongQuestions();
 
   dataService.onNotesChanged((nextNotes) => {
     notesLibrary = Array.isArray(nextNotes) ? nextNotes : [];
@@ -529,6 +531,13 @@ async function initializePersistedState() {
     renderNotesList();
     renderReviewSelection();
     renderTrashList();
+  });
+
+  dataService.onLearningChanged(({ quizHistory: nextHistory, wrongQuestions: nextWrong }) => {
+    quizHistory = Array.isArray(nextHistory) ? nextHistory : [];
+    wrongQuestions = Array.isArray(nextWrong) ? nextWrong : [];
+    renderLearningDashboard();
+    renderSRSSection();
   });
 
   const loadedSettings = await getStorageValueWithLegacyFallback(
@@ -551,6 +560,8 @@ async function initializePersistedState() {
   tempSelectedAvatar = appSettings.avatarSeed;
   currentNoteData = notesLibrary?.[0] || null;
   updateAuthUI();
+  renderLearningDashboard();
+  renderSRSSection();
 }
 
 /**
@@ -584,6 +595,22 @@ function debounce(fn, delay = 150) {
     if (t) clearTimeout(t);
     t = setTimeout(() => fn(...args), delay);
   };
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatHighlightedBullet(value) {
+  return escapeHtml(value).replace(
+    /\*\*(.*?)\*\*/g,
+    '<span class="text-[#13B5B1] font-black">$1</span>',
+  );
 }
 
 function formatHTMLDateToNoteDate(htmlDate) {
@@ -648,7 +675,11 @@ function renderAvatarChoices(targetId = "modal-avatar-grid") {
 
 function loadSettingsToUI() {
   const nickInput = safeEl("settings-nickname");
+  const styleSelect = safeEl("settings-ai-style");
   const previewImg = document.querySelector("#settings-avatar-preview img");
+  if (styleSelect) {
+    styleSelect.value = appSettings.aiStyle || "default";
+  }
 
   if (nickInput) nickInput.value = appSettings.nickname;
 
@@ -662,7 +693,7 @@ function loadSettingsToUI() {
 function saveSettingsFromUI() {
   appSettings.nickname = safeEl("settings-nickname")?.value || "Memo";
   appSettings.avatarSeed = tempSelectedAvatar;
-
+  appSettings.aiStyle = safeEl("settings-ai-style")?.value || "default";
   void persistStorageValue(STORAGE_KEYS.SETTINGS, appSettings);
   updateHomeGreeting();
   alert("您的個人檔案已同步更新 ✨");
@@ -744,6 +775,43 @@ function getRecognitionErrorMessage(errorCode) {
   return map[errorCode] || `語音辨識發生錯誤：${errorCode || "unknown"}`;
 }
 
+function splitTranscriptIntoReadableChunks(text, maxChars = 28, minChars = 14) {
+  const source = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!source) return [];
+
+  const seeds = source
+    .split(/[。！？!?\n；;]+/)
+    .map((piece) => piece.trim())
+    .filter(Boolean);
+
+  const chunks = [];
+  const pieces = seeds.length ? seeds : [source];
+
+  pieces.forEach((piece) => {
+    let rest = piece;
+
+    while (rest.length > maxChars) {
+      const windowText = rest.slice(0, maxChars + 1);
+      let splitAt = -1;
+      ["，", "、", ",", " "].forEach((mark) => {
+        const idx = windowText.lastIndexOf(mark);
+        if (idx > splitAt) splitAt = idx;
+      });
+
+      if (splitAt < minChars) splitAt = maxChars;
+      const part = rest.slice(0, splitAt).trim();
+      if (part) chunks.push(part);
+      rest = rest.slice(splitAt).trim();
+    }
+
+    if (rest) chunks.push(rest);
+  });
+
+  return chunks;
+}
+
 function initRecognition() {
   if (!("webkitSpeechRecognition" in window)) {
     console.warn("This browser does not support webkitSpeechRecognition.");
@@ -767,8 +835,16 @@ function initRecognition() {
     let interim = "";
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       const piece = event.results[i][0]?.transcript || "";
-      if (event.results[i].isFinal) fullTranscript += piece;
-      else interim += piece;
+      if (event.results[i].isFinal) {
+        fullTranscript += piece;
+        const finalChunks = splitTranscriptIntoReadableChunks(piece);
+        finalChunks.forEach((chunk) => {
+          finalizedSpeechTimeline.push({
+            second: Math.max(0, Math.floor(seconds || 0)),
+            text: chunk,
+          });
+        });
+      } else interim += piece;
     }
 
     lastInterim = interim;
@@ -842,6 +918,7 @@ function startRecordPage() {
 
   fullTranscript = "";
   lastInterim = "";
+  finalizedSpeechTimeline = [];
   persistTempTranscript("");
   seconds = 0;
   isRecording = true;
@@ -882,6 +959,75 @@ function cancelRecording() {
   window.navigateTo("page-list");
 }
 
+function parseDurationToSeconds(durationText) {
+  const parts = String(durationText || "00:00")
+    .split(":")
+    .map((n) => Number(n));
+  if (parts.length !== 2 || parts.some((n) => !Number.isFinite(n) || n < 0)) {
+    return 0;
+  }
+  return parts[0] * 60 + parts[1];
+}
+
+function formatSecondsToTimestamp(totalSeconds) {
+  const sec = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const m = Math.floor(sec / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = (sec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function buildSegmentsFromTranscript(
+  transcript,
+  totalSeconds = 0,
+  timeline = [],
+) {
+  const timelineSegments = Array.isArray(timeline)
+    ? timeline
+        .map((item) => ({
+          second: Math.max(0, Math.floor(Number(item?.second) || 0)),
+          text: String(item?.text || "").trim(),
+        }))
+        .filter((item) => item.text)
+    : [];
+
+  if (timelineSegments.length > 0) {
+    return timelineSegments.map((item) => ({
+      time: formatSecondsToTimestamp(item.second),
+      text: item.text,
+    }));
+  }
+
+  const raw = String(transcript || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return [];
+
+  const merged = splitTranscriptIntoReadableChunks(raw);
+  if (merged.length === 0) return [];
+
+  const effectiveTotalSeconds = Math.max(
+    0,
+    Math.floor(Number(totalSeconds) || 0),
+    Math.ceil(raw.length / 6),
+  );
+  const totalChars = merged.reduce((acc, item) => acc + item.length, 0);
+  let passedChars = 0;
+
+  return merged.map((text, idx) => {
+    const ratioBase = totalChars > 0 ? passedChars / totalChars : idx / Math.max(merged.length - 1, 1);
+    const secondAt = effectiveTotalSeconds > 0
+      ? Math.round(ratioBase * effectiveTotalSeconds)
+      : idx * 8;
+    passedChars += text.length;
+    return {
+      time: formatSecondsToTimestamp(secondAt),
+      text,
+    };
+  });
+}
+
 async function stopRecording() {
   if (isGeneratingSummary) return;
 
@@ -894,6 +1040,9 @@ async function stopRecording() {
   persistTempTranscript(finalTranscript || "");
 
   const durationText = safeEl("record-timer")?.innerText || "00:00";
+  const durationFromUi = parseDurationToSeconds(durationText);
+  const totalRecordedSeconds = Math.max(durationFromUi, Math.floor(seconds || 0));
+  const finalDurationText = formatSecondsToTimestamp(totalRecordedSeconds);
 
   if (!finalTranscript) {
     alert("尚未取得有效逐字稿，請再錄一次。若中途失敗可檢查麥克風權限。");
@@ -904,7 +1053,13 @@ async function stopRecording() {
 
   window.navigateTo("page-loading");
 
-  const prompt = `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。逐字稿：${finalTranscript}`;
+  const prompt = `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。請只根據提供內容整理，不要補充逐字稿中不存在的內容。逐字稿：${finalTranscript}`;
+
+  const speechSegments = buildSegmentsFromTranscript(
+    finalTranscript,
+    totalRecordedSeconds,
+    finalizedSpeechTimeline,
+  );
 
   const schema = {
     type: "OBJECT",
@@ -921,18 +1076,11 @@ async function stopRecording() {
           },
         },
       },
-      segments: {
-        type: "ARRAY",
-        items: {
-          type: "OBJECT",
-          properties: { time: { type: "STRING" }, text: { type: "STRING" } },
-        },
-      },
     },
   };
 
   try {
-    const data = await callGemini(prompt, schema);
+    const data = await callGemini(prompt, schema, appSettings.aiStyle || "default");
     const raw = extractAiText(data);
     const result = normalizeAiNotePayload(safeParseAiJson(raw));
 
@@ -941,7 +1089,9 @@ async function stopRecording() {
       id: Date.now().toString(),
       category: "未分類",
       date: `${new Date().getMonth() + 1} / ${new Date().getDate()}`,
-      duration: durationText,
+      duration: finalDurationText,
+      segments: speechSegments,
+      rawTranscript: finalTranscript,
       isFavorite: false,
       isDeleted: false,
     };
@@ -966,9 +1116,14 @@ async function stopRecording() {
  * =========================================================
  */
 
-async function callGemini(prompt, responseSchema = null, retryCount = 0) {
-  const MAX_RETRY = 2;          // 最多重試 2 次（不含首次）
-  const MAX_RETRY_503 = 1;      // 503 服務暫時不可用，最多重試 1 次
+async function callGemini(
+  prompt,
+  responseSchema = null,
+  aiStyle = "default",
+  retryCount = 0,
+) {
+  const MAX_RETRY = 5;          // 最多重試 5 次（不含首次）
+  const MAX_RETRY_503 = 3;      // 503 服務暫時不可用，最多重試 3 次
   const base = Math.pow(2, retryCount) * 1000;
   const jitter = base * (0.7 + Math.random() * 0.6);
 
@@ -980,10 +1135,22 @@ async function callGemini(prompt, responseSchema = null, retryCount = 0) {
   };
 
   const shouldRetryStatus = (status, retry) => {
+    if (status === 429) return false;           // 限流中，絕對不重試
     if (status === 503) return retry < MAX_RETRY_503;
-    if (status === 429 || status >= 500) return retry < MAX_RETRY;
+    if (status >= 500) return retry < MAX_RETRY;
     return false;
   };
+
+  const extractRemoteMessage = (data, status) =>
+    String(data?.error?.message || data?.error || `API 請求失敗 (${status})`);
+
+  const isQuotaExhaustedError = (status, data) => {
+    const remoteMsg = extractRemoteMessage(data, status);
+    return /(quota|配額|resource[_\s-]?exhausted|insufficient[_\s-]?quota|quota[_\s-]?exceeded|billing|exceed.*limit)/i
+      .test(remoteMsg);
+  };
+
+  const styleToUse = aiStyle || appSettings?.aiStyle || "default";
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 25000);
@@ -995,6 +1162,7 @@ async function callGemini(prompt, responseSchema = null, retryCount = 0) {
       body: JSON.stringify({
         prompt: prompt,
         schema: responseSchema,
+        aiStyle: styleToUse || "default",
       }),
       signal: controller.signal,
     });
@@ -1004,14 +1172,28 @@ async function callGemini(prompt, responseSchema = null, retryCount = 0) {
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      if (shouldRetryStatus(response.status, retryCount)) {
-        await new Promise((r) => setTimeout(r, jitter));
-        return callGemini(prompt, responseSchema, retryCount + 1);
+      // 429 限流特殊處理：使用 alert 提示使用者
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("Retry-After") || "60";
+        const errorMsg = `請求過於頻繁，請等待 ${retryAfter} 秒後再試。`;
+        alert(errorMsg);
+        throw new Error(errorMsg);
       }
 
-      const remoteMsg =
-        data?.error?.message || data?.error || `API 請求失敗 (${response.status})`;
-      throw new Error(String(remoteMsg));
+      // Quota/Billing 類錯誤直接停止重試，避免無效等待
+      if (isQuotaExhaustedError(response.status, data)) {
+        throw new Error(
+          "目前 AI 配額不足（Quota Exceeded），已停止自動重試。請稍後再試，或檢查 API/Billing 配額。",
+        );
+      }
+
+      if (shouldRetryStatus(response.status, retryCount)) {
+        await new Promise((r) => setTimeout(r, jitter));
+        return callGemini(prompt, responseSchema, styleToUse, retryCount + 1);
+      }
+
+      const remoteMsg = extractRemoteMessage(data, response.status);
+      throw new Error(remoteMsg);
     }
 
     if (!data) throw new Error("AI 回應格式錯誤，請稍後再試。")
@@ -1021,7 +1203,7 @@ async function callGemini(prompt, responseSchema = null, retryCount = 0) {
     clearTimeout(timeoutId);
     if (retryCount < MAX_RETRY && shouldRetryNetworkError(err)) {
       await new Promise((r) => setTimeout(r, jitter));
-      return callGemini(prompt, responseSchema, retryCount + 1);
+      return callGemini(prompt, responseSchema, styleToUse, retryCount + 1);
     }
     // AbortError：明確告知使用者是超時，而非網路錯誤
     if (err?.name === "AbortError") {
@@ -1112,9 +1294,9 @@ function renderCategoryFilters() {
   const optionsHTML = allCategories
     .map(
       (cat) =>
-        `<option value="${cat}" ${
+        `<option value="${escapeHtml(cat)}" ${
           currentFilterCategory === cat ? "selected" : ""
-        }>分類: ${cat}</option>`,
+        }>分類: ${escapeHtml(cat)}</option>`,
     )
     .join("");
 
@@ -1146,17 +1328,12 @@ function renderNoteUI(data) {
       const card = document.createElement("div");
       card.className = "note-highlight";
       card.innerHTML = `
-        <div class="font-black text-[#13B5B1] text-xs mb-3 uppercase tracking-wider">${sec.category || ""}</div>
+        <div class="font-black text-[#13B5B1] text-xs mb-3 uppercase tracking-wider">${escapeHtml(sec.category || "")}</div>
         <ul class="space-y-3">
           ${(sec.items || [])
             .map(
               (i) => `
-              <li class="text-[12px] text-gray-700 font-bold">• ${String(
-                i,
-              ).replace(
-                /\*\*(.*?)\*\*/g,
-                '<span class="text-[#13B5B1] font-black">$1</span>',
-              )}</li>
+              <li class="text-[12px] text-gray-700 font-bold">• ${formatHighlightedBullet(i)}</li>
             `,
             )
             .join("")}
@@ -1176,12 +1353,12 @@ function renderNoteUI(data) {
         <div class="timeline-dot ${idx === 0 ? "active" : ""}"></div>
         <div class="text-[9px] ${
           idx === 0 ? "text-[#13B5B1]" : "text-gray-300"
-        } font-black mb-1 tracking-wider">${seg.time || ""}</div>
+        } font-black mb-1 tracking-wider">${escapeHtml(seg.time || "")}</div>
         <div class="text-xs ${
           idx === 0
             ? "text-gray-800 font-black bg-[#F0F9F9] -mx-4 px-4 py-2 rounded-2xl shadow-sm border border-[#13B5B1]/5"
             : "text-gray-400 font-bold"
-        } leading-relaxed">${seg.text || ""}</div>
+        } leading-relaxed">${escapeHtml(seg.text || "")}</div>
       `;
       transcriptContainer.appendChild(item);
     });
@@ -1219,10 +1396,11 @@ function renderNotesList() {
     const msg = currentFilterDate
       ? `${currentFilterDate} 沒有紀錄`
       : "目前沒有筆記";
+    const safeMsg = escapeHtml(msg);
     container.innerHTML = `
       <div class="flex flex-col items-center justify-center py-20 text-gray-300 opacity-60">
         <i class="fas fa-file-invoice-alt text-4xl mb-4"></i>
-        <p class="text-sm font-black">${msg}</p>
+        <p class="text-sm font-black">${safeMsg}</p>
       </div>
     `;
     return;
@@ -1241,33 +1419,37 @@ function renderNotesList() {
     const dateParts = String(note.date || "1 / 1").split("/");
     const month = dateParts[0] ? dateParts[0].trim() : "1";
     const day = dateParts[1] ? dateParts[1].trim() : "1";
+    const safeTitle = escapeHtml(note.title || "未命名筆記");
+    const safeCategory = escapeHtml(note.category || "未分類");
+    const safeIntro = escapeHtml(note.intro || "尚無摘要內容...");
+    const safeDuration = escapeHtml(note.duration || "00:00");
 
     wrapper.innerHTML = `
       <div class="card-visual-slot">
         <div class="active-date shadow-sm">
-          <div class="text-[9px] font-bold opacity-80 uppercase">${month}月</div>
-          <div class="text-lg font-black leading-tight">${day}</div>
+          <div class="text-[9px] font-bold opacity-80 uppercase">${escapeHtml(month)}月</div>
+          <div class="text-lg font-black leading-tight">${escapeHtml(day)}</div>
         </div>
       </div>
 
-      <div class="note-card-main" data-action="open-note" data-note-id="${note.id}">
+      <div class="note-card-main" data-action="open-note" data-note-id="${escapeHtml(note.id)}">
         <div class="flex justify-between items-start mb-2">
           <div class="font-black text-gray-800 text-sm leading-snug flex-1">
-            ${note.title || "未命名筆記"}${starHtml}
+            ${safeTitle}${starHtml}
           </div>
           <span class="ml-2 px-2 py-0.5 bg-[#13B5B1]/10 text-[#13B5B1] text-[8px] rounded-full font-black">
-            ${note.category || "未分類"}
+            ${safeCategory}
           </span>
         </div>
 
         <p class="card-intro-text line-clamp-2">
-          ${note.intro || "尚無摘要內容..."}
+          ${safeIntro}
         </p>
 
         <div class="flex justify-between items-center">
           <div class="flex items-center gap-1.5 text-gray-300 font-black tracking-widest">
             <i class="far fa-clock text-[9px]"></i>
-            <span class="text-[8px]">${note.duration || "00:00"}</span>
+            <span class="text-[8px]">${safeDuration}</span>
           </div>
 
           <div class="flex gap-2">
@@ -1278,14 +1460,14 @@ function renderNotesList() {
                   : "bg-yellow-50 text-yellow-400"
               } rounded-xl flex items-center justify-center active:scale-95 transition-all"
               data-action="list-toggle-favorite"
-              data-note-id="${note.id}">
+              data-note-id="${escapeHtml(note.id)}">
               <i class="${note.isFavorite ? "fas" : "far"} fa-star text-[10px]"></i>
             </button>
 
             <button type="button"
               class="w-8 h-8 bg-red-50 text-red-400 rounded-xl flex items-center justify-center active:scale-95 transition-all"
               data-action="delete-note"
-              data-note-id="${note.id}">
+              data-note-id="${escapeHtml(note.id)}">
               <i class="fas fa-trash-alt text-[10px]"></i>
             </button>
           </div>
@@ -1316,10 +1498,21 @@ function renderTrashList() {
     emptyState.classList.add("hidden");
     container.innerHTML = trashNotes
       .map(
-        (note) => `
+        (note) => {
+          const safeTitle = escapeHtml(note.title || "未命名筆記");
+          const safeCategory = escapeHtml(note.category || "未分類");
+          const safeIntro = escapeHtml(note.intro || "已刪除的筆記摘要...");
+          const safeDuration = escapeHtml(note.duration || "00:00");
+          const safeDate = escapeHtml(note.date || "");
+          const safeDeletedAt = escapeHtml(
+            note.deletedAt ? new Date(note.deletedAt).toLocaleDateString() : "未知",
+          );
+          const safeId = escapeHtml(note.id);
+
+          return `
         <div class="flex gap-4 items-start mb-6 w-full group opacity-85">
           <div class="card-visual-slot pt-4">
-            <div data-action="trash-toggle-note" data-id="${note.id}"
+            <div data-action="trash-toggle-note" data-id="${safeId}"
               class="w-6 h-6 rounded-lg border-2 border-gray-100 flex items-center justify-center transition-all cursor-pointer
               ${
                 selectedTrashNotes.has(note.id)
@@ -1336,26 +1529,24 @@ function renderTrashList() {
 
           <div class="note-card-main">
             <div class="flex justify-between items-start mb-2">
-              <div class="font-black text-gray-800 text-sm leading-snug flex-1">${note.title || "未命名筆記"}</div>
+              <div class="font-black text-gray-800 text-sm leading-snug flex-1">${safeTitle}</div>
               <span class="ml-2 px-2 py-0.5 bg-gray-50 text-gray-400 text-[8px] rounded-full font-black border border-gray-100">${
-                note.category || "未分類"
+                safeCategory
               }</span>
             </div>
 
-            <p class="card-intro-text line-clamp-2">${note.intro || "已刪除的筆記摘要..."}</p>
+            <p class="card-intro-text line-clamp-2">${safeIntro}</p>
 
             <div class="flex justify-between items-center mt-2">
               <div class="flex flex-1 items-center gap-4 flex-wrap">
                 <div class="flex items-center gap-1.5 text-gray-300 font-black tracking-widest uppercase">
                   <i class="far fa-clock text-[9px]"></i>
-                  <span class="text-[8px]">${note.duration || "00:00"}</span>
+                  <span class="text-[8px]">${safeDuration}</span>
                 </div>
-                <span class="text-[8px] text-gray-300 font-black tracking-widest uppercase">${note.date || ""}</span>
+                <span class="text-[8px] text-gray-300 font-black tracking-widest uppercase">${safeDate}</span>
                 <div class="text-[8px] text-gray-300 font-black tracking-widest uppercase">
                   <i class="fas fa-history mr-1"></i> 刪除於: ${
-                    note.deletedAt
-                      ? new Date(note.deletedAt).toLocaleDateString()
-                      : "未知"
+                    safeDeletedAt
                   }
                 </div>
               </div>
@@ -1363,26 +1554,27 @@ function renderTrashList() {
               <div class="flex gap-2 flex-shrink-0">
                 <button type="button"
                   class="w-8 h-8 bg-gray-50 text-gray-400 rounded-xl flex items-center justify-center active:scale-95 transition-all"
-                  data-action="open-note" data-note-id="${note.id}">
+                  data-action="open-note" data-note-id="${safeId}">
                   <i class="fas fa-external-link-alt text-[10px]"></i>
                 </button>
 
                 <button type="button"
                   class="w-8 h-8 bg-[#13B5B1]/10 text-[#13B5B1] rounded-xl flex items-center justify-center active:scale-95 transition-all"
-                  data-action="trash-restore" data-note-id="${note.id}">
+                  data-action="trash-restore" data-note-id="${safeId}">
                   <i class="fas fa-undo-alt text-[10px]"></i>
                 </button>
 
                 <button type="button"
                   class="w-8 h-8 bg-red-50 text-red-400 rounded-xl flex items-center justify-center active:scale-95 transition-all"
-                  data-action="trash-permadelete" data-note-id="${note.id}">
+                  data-action="trash-permadelete" data-note-id="${safeId}">
                   <i class="fas fa-times text-[10px]"></i>
                 </button>
               </div>
             </div>
           </div>
         </div>
-      `,
+      `;
+        },
       )
       .join("");
   }
@@ -1410,10 +1602,18 @@ function renderReviewSelection() {
 
   noteContainer.innerHTML = availableNotes
     .map(
-      (note) => `
+      (note) => {
+        const safeTitle = escapeHtml(note.title || "未命名筆記");
+        const safeCategory = escapeHtml(note.category || "未分類");
+        const safeIntro = escapeHtml(note.intro || "尚無摘要內容...");
+        const safeDuration = escapeHtml(note.duration || "00:00");
+        const safeDate = escapeHtml(note.date || "");
+        const safeId = escapeHtml(note.id);
+
+        return `
         <div class="flex gap-4 items-start mb-6 w-full group">
           <div class="card-visual-slot pt-4">
-            <div data-action="review-toggle-note" data-id="${note.id}"
+            <div data-action="review-toggle-note" data-id="${safeId}"
               class="w-6 h-6 rounded-lg border-2 border-gray-100 flex items-center justify-center transition-all cursor-pointer
               ${
                 selectedReviewNotes.has(note.id)
@@ -1428,38 +1628,39 @@ function renderReviewSelection() {
             </div>
           </div>
 
-          <div class="note-card-main" data-action="review-toggle-note" data-id="${note.id}">
+          <div class="note-card-main" data-action="review-toggle-note" data-id="${safeId}">
             <div class="flex justify-between items-start mb-2">
               <div class="font-black text-gray-800 text-sm leading-snug flex-1">
-                ${note.title || "未命名筆記"}
+                ${safeTitle}
                 ${note.isFavorite ? '<i class="fas fa-star text-yellow-400 text-[10px] ml-1"></i>' : ""}
               </div>
               <span class="ml-2 px-2 py-0.5 bg-[#13B5B1]/10 text-[#13B5B1] text-[8px] rounded-full font-black whitespace-nowrap">
-                ${note.category || "未分類"}
+                ${safeCategory}
               </span>
             </div>
 
-            <p class="card-intro-text line-clamp-2">${note.intro || "尚無摘要內容..."}</p>
+            <p class="card-intro-text line-clamp-2">${safeIntro}</p>
 
             <div class="flex justify-between items-center mt-2">
               <div class="flex justify-start items-center gap-4">
                 <div class="flex items-center gap-1.5 text-gray-300 font-black tracking-widest uppercase">
                   <i class="far fa-clock text-[9px]"></i>
-                  <span class="text-[8px]">${note.duration || "00:00"}</span>
+                  <span class="text-[8px]">${safeDuration}</span>
                 </div>
-                <span class="text-[8px] text-gray-300 font-black tracking-widest uppercase">${note.date || ""}</span>
+                <span class="text-[8px] text-gray-300 font-black tracking-widest uppercase">${safeDate}</span>
               </div>
 
               <button type="button"
                 class="w-8 h-8 bg-gray-50 text-gray-400 rounded-xl flex items-center justify-center active:scale-95 transition-all"
                 data-action="open-note"
-                data-note-id="${note.id}">
+                data-note-id="${safeId}">
                 <i class="fas fa-external-link-alt text-[10px]"></i>
               </button>
             </div>
           </div>
         </div>
-      `,
+      `;
+      },
     )
     .join("");
 
@@ -1556,7 +1757,7 @@ function showModal(text) {
   content.innerHTML = `
     <div class="flex flex-col items-center py-12">
       <i class="fas fa-magic text-[#13B5B1] text-4xl animate-bounce mb-6"></i>
-      <p class="text-sm font-black text-gray-400">${text}</p>
+      <p class="text-sm font-black text-gray-400">${escapeHtml(text)}</p>
     </div>
   `;
 }
@@ -1574,6 +1775,87 @@ function openConfirmModal() {
 function closeConfirmModal() {
   const m = safeEl("confirm-modal");
   if (m) m.style.display = "none";
+}
+
+/**
+ * ============================================================
+ * 統一反饋系統（HTML+CSS 替換 alert）
+ * ============================================================
+ */
+function showFeedback(message, type = "info", title = null) {
+  const feedbackModal = safeEl("feedback-modal");
+  const iconEl = safeEl("feedback-icon");
+  const titleEl = safeEl("feedback-title");
+  const textEl = safeEl("feedback-text");
+  const btnEl = safeEl("feedback-close-btn");
+
+  if (!feedbackModal || !iconEl || !textEl || !titleEl) return;
+
+  // 設定圖示、顏色和標題
+  const configs = {
+    error: {
+      icon: "❌",
+      bgClass: "bg-red-50",
+      textClass: "text-red-600",
+      btnClass: "bg-red-500 hover:bg-red-600",
+      defaultTitle: "操作失敗",
+    },
+    success: {
+      icon: "✅",
+      bgClass: "bg-green-50",
+      textClass: "text-green-600",
+      btnClass: "bg-green-500 hover:bg-green-600",
+      defaultTitle: "操作成功",
+    },
+    warning: {
+      icon: "⚠️",
+      bgClass: "bg-yellow-50",
+      textClass: "text-yellow-600",
+      btnClass: "bg-yellow-500 hover:bg-yellow-600",
+      defaultTitle: "警告訊息",
+    },
+    info: {
+      icon: "ℹ️",
+      bgClass: "bg-blue-50",
+      textClass: "text-blue-600",
+      btnClass: "bg-blue-500 hover:bg-blue-600",
+      defaultTitle: "系統訊息",
+    },
+  };
+
+  const config = configs[type] || configs.info;
+
+  // 更新樣式
+  iconEl.textContent = config.icon;
+  iconEl.className = `w-16 h-16 ${config.bgClass} text-3xl rounded-full flex items-center justify-center mx-auto mb-4`;
+  titleEl.textContent = title || config.defaultTitle;
+  textEl.textContent = escapeHtml(message);
+
+  btnEl.className = `w-full py-3 ${config.btnClass} text-white rounded-2xl font-bold text-sm transition`;
+
+  // 顯示模態
+  feedbackModal.style.display = "flex";
+
+  // 自動關閉按鈕
+  btnEl.onclick = () => {
+    feedbackModal.style.display = "none";
+  };
+}
+
+function showError(message, title = "操作失敗") {
+  showFeedback(message, "error", title);
+}
+
+function showSuccess(message, title = "操作成功") {
+  showFeedback(message, "success", title);
+}
+
+function showWarning(message, title = "警告訊息") {
+  showFeedback(message, "warning", title);
+}
+
+function showInfo(message, title = "系統訊息") {
+  showFeedback(message, "info", title);
 }
 
 function changeCategory() {
@@ -1600,17 +1882,18 @@ function changeCategory() {
 
   finalCategories.forEach((cat) => {
     const isActive = (currentNoteData.category || "未分類") === cat;
+    const safeCat = escapeHtml(cat);
     html += `
       <button type="button"
         data-action="set-category"
-        data-category="${cat}"
+        data-category="${safeCat}"
         class="py-2.5 px-1 text-center font-bold text-[11px] rounded-2xl border transition-all leading-tight
         ${
           isActive
             ? "bg-[#13B5B1] text-white border-[#13B5B1]"
             : "bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100"
         }">
-        ${cat}
+        ${safeCat}
       </button>
     `;
   });
@@ -1782,11 +2065,11 @@ function showQuizResult() {
       <p class="text-xs text-gray-400 font-bold px-6 leading-relaxed mb-8">${comment}</p>
       
       <div class="flex flex-col gap-3 px-6">
-        <button onclick="navigateTo('page-settings'); closeModal();" 
+        <button type="button" data-action="open-learning-progress"
           class="w-full py-4 bg-[#13B5B1] text-white rounded-2xl text-xs font-black shadow-lg">
           查看長期學習進度
         </button>
-        <button onclick="closeModal()" 
+        <button type="button" data-action="modal-close"
           class="w-full py-4 bg-gray-50 text-gray-400 rounded-2xl text-xs font-black">
           返回筆記
         </button>
@@ -2000,7 +2283,7 @@ ${contentData}`;
       <div class="text-center py-10">
         <i class="fas fa-exclamation-triangle text-orange-400 text-3xl mb-4"></i>
         <p class="text-sm font-black text-gray-500">哎呀！Memo助手斷線了，請再試一次。</p>
-        <button type="button" onclick="closeModal()" class="mt-4 text-xs text-[#13B5B1] font-black underline">關閉視窗</button>
+        <button type="button" data-action="modal-close" class="mt-4 text-xs text-[#13B5B1] font-black underline">關閉視窗</button>
       </div>
     `;
   }
@@ -2010,17 +2293,19 @@ function renderQuizUI(result, type, count) {
   let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 認知挑戰：${type === "fib" ? "填空測驗" : "智能小考"}</h3>`;
 
   result.questions.forEach((q, qIdx) => {
+    const safeQuestion = escapeHtml(q.question || "");
     html += `
       <div class="mb-8 border-b border-gray-50 pb-6">
-        <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${q.question}</p>
+        <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${safeQuestion}</p>
         <div class="space-y-3">`;
 
     if (type === "fib") {
+      const safeAnswer = escapeHtml(q.answer || "");
       html += `
         <div class="flex gap-2">
           <input type="text" id="fib-input-${qIdx}" placeholder="請輸入答案..."
             class="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-[#13B5B1]">
-          <button type="button" data-action="check-fib" data-idx="${qIdx}" data-answer="${q.answer}"
+          <button type="button" data-action="check-fib" data-idx="${qIdx}" data-answer="${safeAnswer}"
             class="px-4 bg-[#13B5B1] text-white rounded-xl text-xs font-black shadow-md active:scale-95 transition-all">
             檢查
           </button>
@@ -2032,7 +2317,7 @@ function renderQuizUI(result, type, count) {
         .map(
           (opt, oIdx) => `
         <button type="button" class="quiz-option" data-action="quiz-answer"
-          data-selected="${oIdx}" data-correct="${q.answer}">${opt}</button>
+          data-selected="${oIdx}" data-correct="${escapeHtml(q.answer)}">${escapeHtml(opt)}</button>
       `,
         )
         .join("");
@@ -2053,14 +2338,13 @@ async function expandContent() {
   try {
     const data = await callGemini(prompt);
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const safeText = escapeHtml(text)
+      .replace(/\n/g, "<br>")
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
     safeEl("modal-content").innerHTML = `
       <div class="text-left">
         <h3 class="text-lg font-black mb-4 text-[#13B5B1]">📚 Memo助手的延伸筆記</h3>
-        <div class="text-sm leading-relaxed text-gray-600 whitespace-pre-wrap">${String(
-          text,
-        )
-          .replace(/\n/g, "<br>")
-          .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")}</div>
+        <div class="text-sm leading-relaxed text-gray-600 whitespace-pre-wrap">${safeText}</div>
       </div>
     `;
   } catch (err) {
@@ -2154,9 +2438,11 @@ async function startSmartReviewQuiz() {
 
     let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 MemorAIze：跨領域戰役</h3>`;
     result.questions.forEach((q, qIdx) => {
+      const safeQuestion = escapeHtml(q.question || "");
+      const safeAnswer = escapeHtml(q.answer);
       html += `
         <div class="mb-8 border-b border-gray-50 pb-6">
-          <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${q.question}</p>
+          <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${safeQuestion}</p>
           <div class="space-y-2">
             ${q.options
               .map(
@@ -2165,8 +2451,8 @@ async function startSmartReviewQuiz() {
                     class="quiz-option"
                     data-action="quiz-answer"
                     data-selected="${oIdx}"
-                    data-correct="${q.answer}"
-                  >${opt}</button>
+                    data-correct="${safeAnswer}"
+                  >${escapeHtml(opt)}</button>
                 `,
               )
               .join("")}
@@ -2236,8 +2522,8 @@ function renderLearningDashboard() {
           (cat) => `
         <div class="group">
           <div class="flex justify-between mb-2">
-            <span class="text-[11px] font-black text-gray-700">${cat.name}</span>
-            <span class="text-[10px] font-black text-orange-500">${cat.score}%</span>
+            <span class="text-[11px] font-black text-gray-700">${escapeHtml(cat.name)}</span>
+            <span class="text-[10px] font-black text-orange-500">${escapeHtml(cat.score)}%</span>
           </div>
           <div class="h-2.5 bg-gray-100 rounded-full overflow-hidden">
             <div class="h-full rounded-full transition-all duration-1000" 
@@ -2697,7 +2983,7 @@ Object.assign(window, {
           feedbackEl.innerHTML = `<span class="text-green-600 font-black">✅ 太棒了！答案完全正確。</span>`;
         } else {
           inputEl.classList.add("border-red-500", "bg-red-50");
-          feedbackEl.innerHTML = `<span class="text-red-600 font-black">❌ 可惜了，正確答案是：${correctAnswer}</span>`;
+          feedbackEl.innerHTML = `<span class="text-red-600 font-black">❌ 可惜了，正確答案是：${escapeHtml(correctAnswer)}</span>`;
         }
         feedbackEl.classList.remove("hidden");
 
@@ -2726,11 +3012,10 @@ Object.assign(window, {
 
       case "clear-quiz-history": {
         if (confirm("確定要將所有測驗紀錄歸零嗎？這不會刪除您的筆記喔！✨")) {
-          quizHistory = [];
-
-          void storage.removeItem(STORAGE_KEYS.QUIZ_HISTORY);
-
-          renderLearningDashboard();
+          void dataService.clearQuizHistory().then(() => {
+            quizHistory = dataService.getQuizHistory();
+            renderLearningDashboard();
+          });
 
           alert("數據已全數歸零，準備好重新挑戰了嗎？🚀");
         }
@@ -2818,6 +3103,11 @@ Object.assign(window, {
         void signOutFlow();
         break;
 
+      case "open-learning-progress":
+        closeModal();
+        window.navigateTo("page-settings");
+        break;
+
       case "export-data": {
         const backup = {
           exportedAt: new Date().toISOString(),
@@ -2848,7 +3138,16 @@ Object.assign(window, {
 
       case "clear-all-data":
         if (confirm("清除？")) {
-          void storage.clear().finally(() => location.reload());
+          void (async () => {
+            try {
+              await dataService.clearCloudNotesIfSignedIn();
+            } catch (err) {
+              console.error("[ui] clear cloud notes failed:", err);
+            } finally {
+              await storage.clear();
+              location.reload();
+            }
+          })();
         }
         break;
 
