@@ -453,6 +453,7 @@ const DEFAULT_APP_SETTINGS = {
 };
 
 let appSettings = { ...DEFAULT_APP_SETTINGS };
+let isAuthInProgress = false;
 
 const animalAvatars = [
   "Fox",
@@ -526,9 +527,53 @@ function updateAuthUI() {
   if (signOutBtn) signOutBtn.classList.toggle("hidden", !user);
 }
 
+function isStandalonePwaMode() {
+  const standaloneByMedia = window.matchMedia?.("(display-mode: standalone)")?.matches;
+  const standaloneByNavigator = window.navigator?.standalone === true;
+  return !!(standaloneByMedia || standaloneByNavigator);
+}
+
+function isLikelyMobileDevice() {
+  const ua = String(window.navigator?.userAgent || "").toLowerCase();
+  return /android|iphone|ipad|ipod|mobile/i.test(ua);
+}
+
+function isInAppWebView() {
+  const ua = String(window.navigator?.userAgent || "").toLowerCase();
+  return /(line|fbav|fban|instagram|micromessenger|wv)/i.test(ua);
+}
+
+function shouldPreferRedirectAuth() {
+  return isStandalonePwaMode() || isLikelyMobileDevice() || isInAppWebView();
+}
+
 async function signInWithGoogleFlow() {
+  if (isAuthInProgress) return;
+
+  const inApp = isInAppWebView();
+  const preferRedirect = shouldPreferRedirectAuth();
+
+  if (inApp) {
+    alert("目前偵測為 App 內建瀏覽器，登入可能失敗。建議點選右上角改用 Safari/Chrome 開啟後再登入。");
+  }
+
+  isAuthInProgress = true;
+  const signInBtn = safeEl("auth-signin-btn");
+  if (signInBtn) {
+    signInBtn.disabled = true;
+    signInBtn.style.opacity = "0.6";
+  }
+
   try {
-    await dataService.signInWithGoogle();
+    const user = await dataService.signInWithGoogle({ preferRedirect });
+
+    if (!user?.uid) {
+      if (preferRedirect) {
+        alert("正在前往 Google 登入頁面...");
+      }
+      return;
+    }
+
     notesLibrary = dataService.getNotes();
     currentNoteData = notesLibrary?.[0] || null;
     updateAuthUI();
@@ -540,6 +585,12 @@ async function signInWithGoogleFlow() {
   } catch (err) {
     console.error("[ui] sign-in failed:", err);
     alert(`Google 登入失敗：${err.message || "未知錯誤"}`);
+  } finally {
+    isAuthInProgress = false;
+    if (signInBtn) {
+      signInBtn.disabled = false;
+      signInBtn.style.opacity = "1";
+    }
   }
 }
 
@@ -556,6 +607,10 @@ async function signOutFlow() {
 
 async function initializePersistedState() {
   mountAuthControlsIfNeeded();
+
+  dataService.onAuthChanged(() => {
+    updateAuthUI();
+  });
 
   const loadedNotes = await dataService.init(DEFAULT_NOTES_LIBRARY);
   notesLibrary = Array.isArray(loadedNotes) && loadedNotes.length

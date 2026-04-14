@@ -124,8 +124,14 @@ class DataService {
     return authService.getCurrentUser();
   }
 
-  async signInWithGoogle() {
-    const user = await authService.signInWithGoogle();
+  onAuthChanged(callback) {
+    return authService.onChange(callback);
+  }
+
+  async signInWithGoogle(options = {}) {
+    const user = await authService.signInWithGoogle(options);
+    if (!user?.uid) return user;
+
     await this.syncNotesIfNeeded();
     await this.syncLearningIfNeeded();
     return user;
@@ -153,7 +159,7 @@ class DataService {
         return {
           id: String(item?.id || buildQuizHistoryId(item)),
           noteId: String(item?.noteId || "smart-review"),
-          category: String(item?.category || "Á∂úÂêàË§áÁøí"),
+          category: String(item?.category || "Á∂????Ë§?Áø?"),
           type: String(item?.type || "mc"),
           isCorrect: !!item?.isCorrect,
           timestamp,
@@ -216,7 +222,7 @@ class DataService {
     const item = {
       id: record?.id || `${now}-${Math.random().toString(36).slice(2, 8)}`,
       noteId: record?.noteId || "smart-review",
-      category: record?.category || "Á∂úÂêàË§áÁøí",
+      category: record?.category || "Á∂????Ë§?Áø?",
       type: record?.type || "mc",
       isCorrect: !!record?.isCorrect,
       timestamp: toMillis(record?.timestamp, now),

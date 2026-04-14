@@ -2,30 +2,36 @@
 
 ## 新增功能說明
 
-### 1. `localforage` 本機資料保存
+桌機 Chrome：點登入，應優先 popup，成功後設定頁顯示已登入。
+手機 Chrome/Safari：點登入，應走 redirect，回站後顯示已登入。
+iOS 主畫面 PWA：點登入，應走 redirect（不再依賴 popup）。
+LINE/IG 內建瀏覽器：先看到提示，建議改用系統瀏覽器後登入。
 
-本版本已將主要資料保存流程改為使用 `localforage`，取代單純依賴 `localStorage` 的方式。
+## 部屬環境設定 + 手動操作注意事項
 
-優點如下：
+# Vercel 沒有設定 Firebase 前端環境變數
+你的登入是否啟用是由 firebaseClient.js 的 VITE_FIREBASE_* 判斷。少任一關鍵值就會直接停用 Auth。
+必填至少這些：
+VITE_FIREBASE_API_KEY
+VITE_FIREBASE_AUTH_DOMAIN
+VITE_FIREBASE_PROJECT_ID
+VITE_FIREBASE_APP_ID
 
-- 資料持久化更穩定，適合後續擴充。
-- 可作為本機快取，讓 App 維持 local-first 使用體驗。
-- 即使未登入，筆記仍可先保存在本機。
+# 改完 Vercel 環境變數後沒有重新部署
+這是 Vite 專案常見點：VITE_* 是 build-time 注入，不是 runtime。
+只改 Environment Variables 不會立刻生效，必須重新 Deploy 一次。
 
-目前筆記資料會先寫入本機，再依登入狀態決定是否同步到雲端。
+# Firebase Console 沒開 Google Provider 或沒加授權網域
+你的登入是 signInWithPopup（authService.js），需要：
+Firebase Authentication > Sign-in method > Google：Enabled
+Firebase Authentication > Settings > Authorized domains：加入
+你的 vercel 網域（例如 xxx.vercel.app）
+自訂網域（若有）
+localhost（本機測試用）
 
-### 2. Google 登入雲端同步
-
-本版本新增 Google 登入，登入後會啟用 Firebase Auth + Firestore 筆記同步。
-
-同步特性如下：
-
-- 每位使用者的資料獨立保存於自己的 Firestore 路徑。
-- 筆記以使用者 UID 對應到雲端資料。
-- 本機資料與雲端資料會做合併同步。
-- 未登入時仍可本機使用；登入後會開始同步目前筆記。
-
-目前雲端同步的主要範圍是 notes 資料。
+# 瀏覽器把 Popup 擋掉
+你使用的是 popup 流程，不是 redirect。若被瀏覽器/內嵌 WebView 擋掉，就會像沒反應。
+建議先用桌面 Chrome 直接開站測試，允許彈窗。
 
 ## 開發環境設定
 
