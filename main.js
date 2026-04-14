@@ -33,9 +33,20 @@ let recognitionRestartTimer = null;
 let recognitionEndFailCount = 0;
 let lastInterim = "";
 let finalizedSpeechTimeline = [];
+let lastResultAt = 0;
+let lastRestartAt = 0;
+let lastErrorCode = "";
+let noResultWatchdogTimer = null;
+let startTimeoutTimer = null;
 
 const TEMP_TRANSCRIPT_KEY = "temp_transcript";
 const RECOGNITION_MAX_RESTARTS = 5;
+const NO_RESULT_TIMEOUT_MS = 20000;
+const WATCHDOG_INTERVAL_MS = 2000;
+const RESTART_GRACE_MS = 5000;
+const HARD_REBUILD_AFTER_FAILS = 3;
+const PERIODIC_TRANSCRIPT_PERSIST_MS = 5000;
+const RECOGNITION_START_TIMEOUT_MS = 3000;
 
 const STORAGE_KEYS = {
   QUIZ_HISTORY: "president_quiz_history",
@@ -734,9 +745,55 @@ function persistTempTranscript(text = getTranscriptText()) {
   void persistStorageValue(STORAGE_KEYS.TEMP_TRANSCRIPT, text || "");
 }
 
+function clearRecognitionStartTimeout() {
+  if (!startTimeoutTimer) return;
+  clearTimeout(startTimeoutTimer);
+  startTimeoutTimer = null;
+}
+
+function stopNoResultWatchdog() {
+  if (!noResultWatchdogTimer) return;
+  clearInterval(noResultWatchdogTimer);
+  noResultWatchdogTimer = null;
+}
+
+function hardRebuildRecognition() {
+  // Rebuild recognition instance after repeated failures to recover bad internal state.
+  recognition = null;
+  isRecognitionStarting = false;
+  isStoppingRecognition = false;
+  clearRecognitionStartTimeout();
+  initRecognition();
+}
+
+function startNoResultWatchdog() {
+  stopNoResultWatchdog();
+
+  noResultWatchdogTimer = setInterval(() => {
+    if (!isRecording || isStoppingRecognition || !recognition) return;
+
+    const now = Date.now();
+    if (now - lastResultAt <= NO_RESULT_TIMEOUT_MS) return;
+    if (now - lastRestartAt <= RESTART_GRACE_MS) return;
+
+    // Soft restart only: stop then start, and persist first to reduce loss on interruption.
+    persistTempTranscript(getTranscriptText());
+    stopRecognitionSafely();
+
+    setTimeout(() => {
+      if (!isRecording) return;
+      const ok = startRecognitionSafely();
+      if (!ok) {
+        console.warn("Watchdog soft restart start() failed");
+      }
+    }, 700);
+  }, WATCHDOG_INTERVAL_MS);
+}
+
 function stopRecognitionSafely() {
   if (!recognition) return;
   isStoppingRecognition = true;
+  clearRecognitionStartTimeout();
   if (recognitionRestartTimer) {
     clearTimeout(recognitionRestartTimer);
     recognitionRestartTimer = null;
@@ -754,10 +811,23 @@ function startRecognitionSafely() {
   if (!recognition || isRecognitionStarting) return false;
 
   isRecognitionStarting = true;
+  clearRecognitionStartTimeout();
+  lastRestartAt = Date.now();
+
+  startTimeoutTimer = setTimeout(() => {
+    // Guard against start() stuck without onstart callback.
+    if (isRecognitionStarting) {
+      isRecognitionStarting = false;
+      console.warn("Recognition start timed out; unlock start gate for retry.");
+    }
+    startTimeoutTimer = null;
+  }, RECOGNITION_START_TIMEOUT_MS);
+
   try {
     recognition.start();
     return true;
   } catch (err) {
+    clearRecognitionStartTimeout();
     isRecognitionStarting = false;
     console.error("Recognition start failed:", err);
     return false;
@@ -827,11 +897,15 @@ function initRecognition() {
   recognition.lang = "zh-TW";
 
   recognition.onstart = () => {
+    clearRecognitionStartTimeout();
     isRecognitionStarting = false;
     recognitionEndFailCount = 0;
+    lastRestartAt = Date.now();
+    lastErrorCode = "";
   };
 
   recognition.onresult = (event) => {
+    lastResultAt = Date.now();
     let interim = "";
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       const piece = event.results[i][0]?.transcript || "";
@@ -865,10 +939,16 @@ function initRecognition() {
 
     if (["not-allowed", "service-not-allowed", "audio-capture"].includes(code)) {
       isRecording = false;
+      stopNoResultWatchdog();
+      clearRecognitionStartTimeout();
       clearInterval(timerInterval);
       alert(msg);
       window.navigateTo("page-list");
       return;
+    }
+
+    if (["network", "no-speech", "aborted"].includes(code)) {
+      lastErrorCode = code;
     }
 
     console.warn(msg);
@@ -893,6 +973,8 @@ function initRecognition() {
       const snapshot = getTranscriptText();
       persistTempTranscript(snapshot);
       isRecording = false;
+      stopNoResultWatchdog();
+      clearRecognitionStartTimeout();
       clearInterval(timerInterval);
       alert("語音辨識已中斷且重啟失敗，逐字稿已暫存。請重新開始錄音。");
       window.navigateTo("page-list");
@@ -901,6 +983,11 @@ function initRecognition() {
 
     recognitionRestartTimer = setTimeout(() => {
       recognitionEndFailCount += 1;
+      const shouldHardRebuild = recognitionEndFailCount >= HARD_REBUILD_AFTER_FAILS;
+      if (shouldHardRebuild) {
+        hardRebuildRecognition();
+      }
+
       const ok = startRecognitionSafely();
       if (!ok) {
         console.warn(
@@ -923,6 +1010,9 @@ function startRecordPage() {
   seconds = 0;
   isRecording = true;
   recognitionEndFailCount = 0;
+  lastErrorCode = "";
+  lastResultAt = Date.now();
+  lastRestartAt = Date.now();
 
   const timerEl = safeEl("record-timer");
   const liveEl = safeEl("live-transcript");
@@ -935,13 +1025,20 @@ function startRecordPage() {
   if (!started) {
     alert("語音辨識啟動失敗，請檢查麥克風權限後重試。");
     isRecording = false;
+    stopNoResultWatchdog();
+    clearRecognitionStartTimeout();
     window.navigateTo("page-list");
     return;
   }
 
+  startNoResultWatchdog();
+
   clearInterval(timerInterval);
   timerInterval = setInterval(() => {
     seconds++;
+    if (seconds % Math.floor(PERIODIC_TRANSCRIPT_PERSIST_MS / 1000) === 0) {
+      persistTempTranscript(getTranscriptText());
+    }
     const m = Math.floor(seconds / 60)
       .toString()
       .padStart(2, "0");
@@ -953,6 +1050,8 @@ function startRecordPage() {
 
 function cancelRecording() {
   isRecording = false;
+  stopNoResultWatchdog();
+  clearRecognitionStartTimeout();
   stopRecognitionSafely();
   clearInterval(timerInterval);
   persistTempTranscript(getTranscriptText());
@@ -1033,6 +1132,8 @@ async function stopRecording() {
 
   isGeneratingSummary = true;
   isRecording = false;
+  stopNoResultWatchdog();
+  clearRecognitionStartTimeout();
   stopRecognitionSafely();
   clearInterval(timerInterval);
 
