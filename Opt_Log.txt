@@ -1,0 +1,199 @@
+原本的問題：語音辨識被重複初始化，事件處理器互相覆蓋
+更新版本：只保留單一初始化入口 initRecognition，且 recognition 已存在就直接 return
+修改方式：刪除檔案中第二段獨立 recognition 建立與 onresult/onend 綁定，統一收斂到同一套 lifecycle
+問題原因：重複初始化會造成 onresult/onend 行為不一致，容易出現 transcript 被覆蓋或重啟邏輯混亂
+
+原本的問題：缺少完整辨識錯誤處理，失敗時使用者不知道發生什麼
+更新版本：新增 onerror + 錯誤分類訊息（權限、麥克風、網路、無語音）
+修改方式：新增 getRecognitionErrorMessage，onerror 依錯誤碼分流；權限/裝置錯誤會中止流程並提示
+問題原因：Web Speech API 常見錯誤若不分類，會變成 silent failure，使用者只看到「沒反應」
+
+原本的問題：逐字稿暫存時機分散，存在覆寫/遺失風險
+更新版本：統一用 getTranscriptText + persistTempTranscript 管理 temp_transcript
+修改方式：onresult、cancel、stop、beforeunload 都走同一暫存 helper
+問題原因：多處直接 setItem 容易寫法不一致，導致保存內容不完整或時機錯誤
+
+原本的問題：onend 可能無限制重啟或重啟失敗後無明確收斂
+更新版本：加入 RECOGNITION_MAX_RESTARTS 上限與失敗後保底處理
+修改方式：onend 內加重啟次數計數，超過上限後停止錄音、保存 transcript、提示使用者
+問題原因：連續 start 失敗會讓流程卡住，且 UI 看似在錄音但實際已失效
+
+原本的問題：stop/cancel/onend 互相干擾，存在競態
+更新版本：新增 isRecognitionStarting、isStoppingRecognition、isGeneratingSummary 三個 guard
+修改方式：用 stopRecognitionSafely/startRecognitionSafely 包住 start/stop；stop 時識別 aborted 不當成錯誤
+問題原因：非同步事件同時觸發時，若無 guard，會出現重複 stop、重複生成、錯誤重啟
+
+原本的問題：stopRecording 在空 transcript 仍往下打 AI，產生無效請求
+更新版本：先檢查 finalTranscript，為空則直接提示並返回
+修改方式：stopRecording 前段新增空內容防護
+問題原因：空內容生成失敗機率高，也會讓使用者誤判是 AI 壞掉而不是前段錄音失敗
+
+原本的問題：AI 生成失敗時雖有提示，但保留策略與流程收斂不夠嚴謹
+更新版本：失敗一定保留 temp transcript，並在 finally 釋放生成鎖
+修改方式：stopRecording 加入 try/catch/finally 結構化收斂
+問題原因：沒有穩定的 finally 收斂，可能導致按鈕鎖住或狀態殘留
+
+原本的問題：callGemini retry 條件過粗，可能不必要重試或超時卡住
+更新版本：加入 timeout、狀態碼分流（429/5xx 才重試）、網路錯誤判斷
+修改方式：fetch 增加 AbortController；用 shouldRetryStatus / shouldRetryNetworkError 控制退避重試
+問題原因：不分錯誤類型地重試會放大延遲，且無 timeout 容易讓流程長時間無回應
+
+原本的問題：AI 回傳 JSON 解析脆弱（code fence/污染字串會直接爆）
+更新版本：safeParseAiJson 提供清理與 fallback 解析策略
+修改方式：先去除 code fence，再嘗試整段 parse，失敗再嘗試取首尾大括號片段
+問題原因：LLM 回傳常夾帶非 JSON 字元，單次 JSON.parse 成功率不穩定
+
+原本的問題：即使 parse 成功，欄位缺漏仍可能讓 UI 渲染不穩
+更新版本：normalizeAiNotePayload 做欄位補齊與清洗
+修改方式：title/intro 預設值、sections/segments 陣列化、空值過濾
+問題原因：前端渲染預期固定資料形狀，缺欄位會造成空白內容或潛在例外
+
+原本的問題：使用者離開頁面時可能丟失當前逐字稿
+更新版本：beforeunload 時自動保存最新 transcript
+修改方式：新增 beforeunload 監聽，錄音中或有內容即持久化
+問題原因：頁面刷新/關閉是高頻中斷場景，不做最後落盤容易遺失資料
+
+原本的問題：流程邏輯分散在大函式，維護困難
+更新版本：拆出小型 helper（辨識控制、暫存、AI parse/normalize）
+修改方式：在不改 UI 的前提下，只抽離高風險區塊
+問題原因：高耦合函式難除錯，尤其是錄音與非同步 API 混在一起時
+
+原本的問題： callGemini 的 AbortError 被當作可重試的網路錯誤，導致 25s 超時後繼續遞迴，最長可卡住 125 秒
+更新版本： AbortError 明確排除在重試條件外，超時直接拋出「AI 請求超時（25 秒）」提示
+修改方式： shouldRetryNetworkError 移除 err?.name === "AbortError" 判斷，catch 區塊補上 AbortError 的中文錯誤訊息
+問題原因： AbortController.abort() 觸發的是前端自己主動取消，不是網路問題，重試只會讓同樣的 25s 計時器一次次觸發，形成無意義的遞迴迴圈
+
+原本的問題： 503 使用與 429 相同的 MAX_RETRY = 5，等待時間累計超過 31 秒
+更新版本： 503 獨立設為 MAX_RETRY_503 = 1，最多重試 1 次後快速收斂；429 與其他 5xx 維持 MAX_RETRY = 2
+修改方式： shouldRetryStatus 改為接收 retry 計數，依錯誤碼分流上限
+問題原因： 503 語意是服務容量不足，短時間多次重試無助於成功，只是延遲失敗告知的時機；429 和偶發 500 仍有重試價值
+
+原本的問題： gemini.js 對 Google upstream fetch 沒有 timeout，若 Google API 回應慢，Vercel 會在 30 秒後強制 kill function，產生非預期中斷
+更新版本： 加入 AbortSignal.timeout(20000)，20 秒無回應即主動切斷
+修改方式： fetch(url, { ... }) 增加 signal: AbortSignal.timeout(20000)
+問題原因： Vercel serverless 有 30s hard limit，後端若沒有自己的超時防護，會被平台強制終止而非優雅結束，導致前端收不到正常的錯誤回應；20s 確保在 30s 之前完成收斂
+
+[資安進度盤點]
+原本的問題：前端 `innerHTML` 渲染仍存在 XSS 風險。
+更新版本：目前高風險動態輸出點已完成 escapeHtml 與格式化 helper 套用，原本報告列出的主要注入面已大幅收斂。
+修改方式：main.js 已將筆記內容、回收站、複習清單、測驗題目、Modal 提示、學習儀表板、填空題回饋等動態字串改為轉義後再輸出；僅保留受控模板與靜態 HTML。
+問題原因：此項就「原報告中尚未解決的高風險輸出點」而言，目前可視為程式層已處理；但後續若新增 `innerHTML` sink，仍必須沿用同一套輸出消毒原則。
+
+原本的問題：尚未全面導入 CSP / 安全標頭機制。
+更新版本：已新增 vercel.json 完整安全標頭策略，包含 CSP、frame-ancestors、script-src、connect-src、HSTS、COOP、CORP 與 API no-store；Tailwind inline config 已改為本機 `public/tailwind-config.js`，可避免 CSP 上線後白屏。
+修改方式：index.html 已移除 Tailwind inline config 並改載入本機 JS；vercel.json 收斂全站與 `/api/*` 的安全標頭與來源白名單；另建立 SECURITY_ROLLOUT_CHECKLIST.md 作為驗收清單。
+問題原因：此項目前屬「程式完成、部署驗證待手動執行」；main.js 原先少數 inline onclick 已改為 data-action 事件委派，現行程式碼已與 CSP 強化方向一致。
+
+原本的問題：Firestore 規則強度不足，僅做 UID 隔離，未限制資料結構與大小。
+更新版本：已完成 firestore.rules 強化版規則，加入 notes、learning_quiz_history、learning_wrong_questions 的欄位白名單、型別、字串長度、陣列上限與 answer 欄位限制。
+修改方式：firestore.rules 新增 `hasOnly*Keys`、`isValid*` 驗證函式，並將 create/update 全數收斂到結構驗證；其他路徑維持 deny all。
+問題原因：此項在規則檔內容上已完成，但 Firestore 規則是否真正生效仍取決於你是否在 Firebase Console 發布，因此目前狀態屬「規則完成、發布待手動執行」。
+
+原本的問題：未導入 Rate Limit / WAF，API 容易被濫用或造成成本風險。
+更新版本：API 已升級為優先使用 Upstash Redis 的持久化限流，並補上 bot user-agent 阻擋、硬封鎖門檻與安全告警 webhook；記憶體限流僅保留為 fallback。WAF / 機器人挑戰策略則改為平台層待啟用項目。
+修改方式：api/gemini.js 新增 `getRedisConfig`、`redisCall`、`checkRateLimitPersistent`、`sendSecurityAlert`、`isBlockedUserAgent`，並在 handler 內統一攔截；SECURITY_ROLLOUT_CHECKLIST.md 補上平台驗證步驟。
+問題原因：此項在應用程式層已明顯前進，但若未設定 `UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN` 與 Vercel Dashboard WAF / Bot Protection，仍不能算完整落地，因此目前狀態屬「程式完成、平台設定待手動執行」。
+
+
+手動驗證項目
+
+錄音正常流程
+進錄音頁說話 10 秒後按停止
+預期：進 loading，成功產生筆記，最後 temp transcript 被清掉
+
+錄音中斷重啟上限
+錄音途中把麥克風裝置拔掉或拒絕權限
+預期：不是無限重啟；達上限後跳提示並回列表，逐字稿仍在
+
+取消錄音保底
+錄到一半按取消
+預期：回列表，逐字稿有保留在暫存
+
+AI 失敗保底
+暫時讓 API key 失效後按停止
+預期：顯示失敗原因，回列表，逐字稿不遺失
+
+JSON 汙染容錯
+模擬 AI 回傳含 code fence 或多餘文字
+預期：多數情況仍可解析；不能解析時也不會丟 transcript
+
+
+
+
+尚未完全解決的風險
+
+temp_transcript 目前是被動保存，尚未做「啟動後可視化復原提示」與「一鍵恢復到編輯態」。
+
+Web Speech API 在不同瀏覽器兼容差異仍存在（目前以 webkitSpeechRecognition 為主）。
+
+main.js:16 的 selectedTrashNotes 仍是潛在獨立風險，建議下一輪修正。
+
+後端 gemini.js request body 驗證已補上；後續可再加上游錯誤分類標準化與結構化錯誤碼映射（本輪未改）。
+
+
+
+
+部署前仍需手動設定（原因與步驟）
+目前程式端已完成大部分資安實作（包含 API 驗證、CSP 標頭設定、Firestore 規則檔），
+但仍有幾項必須在雲端平台手動完成，否則會出現「程式已改、正式站未生效」的落差。
+
+1. Firebase Rules 發布（必要）
+原因：
+本地檔案 firestore.rules 已更新，不代表雲端 Firestore 已生效；必須在 Firebase Console 發布。
+
+步驟：
+打開 Firebase Console → Firestore Database → Rules。
+將 firestore.rules 內容貼上（或用 CLI 部署）。
+按 Publish。
+以非本人 UID 測試讀寫，確認被拒絕。
+
+2. Vercel 環境變數設定（必要）
+原因：
+正式部署不會自動讀你電腦本地的 .env，API 在雲端執行時只會
+讀 Vercel Project 的 Environment Variables。
+
+步驟：
+Vercel 專案 → Settings → Environment Variables。
+新增：
+GEMINI_API_KEY
+UPSTASH_REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN
+SECURITY_ALERT_WEBHOOK_URL（選填，做告警用）
+變數至少套用到 Production（建議 Preview、Development 也一併設定）。
+重新部署一次，讓新變數生效。
+
+3. Upstash Redis 參數取得（P2 限流必要）
+原因：
+gemini.js 的平台層持久化限流依賴 Upstash Redis REST；
+未設定會退回記憶體限流（在 serverless 下不穩定）。
+
+步驟：
+到 Upstash 建立 Redis Database。
+在該 Database 的 REST API 區塊取得：
+UPSTASH_REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN
+回 Vercel 填入上述環境變數。
+
+4. 安全標頭生效驗證（必要）
+原因：
+vercel.json 只是設定檔，仍需在正式網域確認回應標頭實際存在。
+
+步驟：
+部署後打開正式站。
+DevTools → Network → 重新整理。
+點第一個 document 請求（不是 css/js）。
+檢查 Response Headers 是否包含：
+Content-Security-Policy
+X-Frame-Options
+Referrer-Policy
+Strict-Transport-Security
+
+5. WAF / Bot 防護（建議，P2）
+原因：
+應用程式內限流只能擋一部分濫用，平台層 WAF 與 Bot 規則才能補齊大流量與惡意流量防護。
+
+步驟：
+Vercel Dashboard 啟用 WAF managed rules。
+對 /api/* 啟用 Bot Protection 或 Challenge。
+設定流量異常告警（含成本異常告警）。
+

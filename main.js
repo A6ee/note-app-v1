@@ -3,6 +3,8 @@
  * 0) Config & State（設定與狀態）
  * =========================================================
  */
+import localforage from "localforage";
+import { dataService } from "./services/dataService";
 import { registerSW } from "virtual:pwa-register";
 registerSW({ immediate: true });
 
@@ -23,25 +25,87 @@ let seconds = 0;
 let recognition;
 let fullTranscript = "";
 let isRecording = false;
+let isGeneratingSummary = false;
+let isRecognitionStarting = false;
+let isStoppingRecognition = false;
 
 let recognitionRestartTimer = null;
 let recognitionEndFailCount = 0;
 let lastInterim = "";
+let finalizedSpeechTimeline = [];
+let lastResultAt = 0;
+let lastRestartAt = 0;
+let lastErrorCode = "";
+let noResultWatchdogTimer = null;
+let startTimeoutTimer = null;
 
-let quizHistory =
-  JSON.parse(localStorage.getItem("president_quiz_history")) || [];
+const TEMP_TRANSCRIPT_KEY = "temp_transcript";
+const RECOGNITION_MAX_RESTARTS = 5;
+const NO_RESULT_TIMEOUT_MS = 20000;
+const WATCHDOG_INTERVAL_MS = 2000;
+const RESTART_GRACE_MS = 5000;
+const HARD_REBUILD_AFTER_FAILS = 3;
+const PERIODIC_TRANSCRIPT_PERSIST_MS = 5000;
+const RECOGNITION_START_TIMEOUT_MS = 3000;
+
+const STORAGE_KEYS = {
+  QUIZ_HISTORY: "president_quiz_history",
+  WRONG_QUESTIONS: "president_wrong_questions",
+  NOTES: "president_notes",
+  SETTINGS: "president_settings",
+  TEMP_TRANSCRIPT: TEMP_TRANSCRIPT_KEY,
+};
+
+const storage = localforage.createInstance({
+  name: "MemorAIze",
+  storeName: "app_state",
+});
+
+function parseJsonSafe(raw, fallback) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+async function getStorageValueWithLegacyFallback(key, fallback, parser = (v) => v) {
+  const value = await storage.getItem(key);
+  if (value !== null && value !== undefined) return value;
+
+  const legacyRaw = localStorage.getItem(key);
+  if (legacyRaw === null) return fallback;
+
+  const legacyValue = parser(legacyRaw);
+  await storage.setItem(key, legacyValue);
+  localStorage.removeItem(key);
+  return legacyValue;
+}
+
+function persistStorageValue(key, value) {
+  return storage.setItem(key, value).catch((err) => {
+    console.error(`儲存失敗 (${key}):`, err);
+  });
+}
+
+let quizHistory = [];
 
 function saveQuizRecord(record) {
-  quizHistory.push({
+  const item = {
     ...record,
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     timestamp: Date.now(),
+    updatedAt: Date.now(),
+  };
+  quizHistory.push(item);
+  void dataService.addQuizRecord(item).then((nextHistory) => {
+    quizHistory = Array.isArray(nextHistory) ? nextHistory : quizHistory;
+    renderLearningDashboard();
   });
-  localStorage.setItem("president_quiz_history", JSON.stringify(quizHistory));
 }
 
 // main.js
-let wrongQuestions =
-  JSON.parse(localStorage.getItem("president_wrong_questions")) || [];
+let wrongQuestions = [];
 
 // 艾賓浩斯複習間隔 (毫秒)
 const EB_INTERVALS = [
@@ -53,15 +117,15 @@ const EB_INTERVALS = [
 ];
 
 function saveWrongQuestions() {
-  localStorage.setItem(
-    "president_wrong_questions",
-    JSON.stringify(wrongQuestions),
-  );
+  void dataService.persistWrongQuestions(wrongQuestions).then((nextWrong) => {
+    wrongQuestions = Array.isArray(nextWrong) ? nextWrong : wrongQuestions;
+    renderSRSSection();
+  });
 }
 /**
  * Notes / Settings
  */
-let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
+let notesLibrary = [
   {
     id: "note-long-1",
     title: "馬斯洛需求層次：人類動機的核心",
@@ -347,22 +411,18 @@ let notesLibrary = JSON.parse(localStorage.getItem("president_notes")) || [
   },
 ];
 
+const DEFAULT_NOTES_LIBRARY = JSON.parse(JSON.stringify(notesLibrary));
+
 let currentNoteData = notesLibrary?.[0] || null;
 
-let appSettings = JSON.parse(localStorage.getItem("president_settings")) || {
-  nickname: "皮皮同學",
+const DEFAULT_APP_SETTINGS = {
+  nickname: "同學",
   avatarSeed: "Fox",
   noteStyle: "standard",
   aiStyle: "default",
 };
 
-if (!appSettings.aiStyle) {
-  appSettings.aiStyle = "default";
-}
-
-if (!localStorage.getItem("president_settings")) {
-  localStorage.setItem("president_settings", JSON.stringify(appSettings));
-}
+let appSettings = { ...DEFAULT_APP_SETTINGS };
 
 const animalAvatars = [
   "Fox",
@@ -380,6 +440,140 @@ const animalAvatars = [
 ];
 
 let tempSelectedAvatar = appSettings.avatarSeed;
+
+function mountAuthControlsIfNeeded() {
+  if (safeEl("auth-signin-btn") || safeEl("auth-signout-btn")) return;
+
+  const settingsRoot = document.querySelector("#page-settings .settings-scroll .px-6");
+  if (!settingsRoot) return;
+
+  const section = document.createElement("section");
+  section.className = "mb-8";
+  section.innerHTML = `
+    <p class="text-[10px] text-gray-300 font-black tracking-widest uppercase mb-4 ml-1">雲端同步帳號</p>
+    <div class="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm space-y-3">
+      <p id="auth-status-text" class="text-xs font-bold text-gray-500">未登入（僅本機模式）</p>
+      <button
+        id="auth-signin-btn"
+        type="button"
+        data-action="auth-signin-google"
+        class="w-full py-3 bg-white border border-gray-100 text-gray-700 rounded-2xl text-xs font-black shadow-sm active:scale-95"
+      >
+        <i class="fab fa-google mr-2"></i>Google 登入並同步筆記
+      </button>
+      <button
+        id="auth-signout-btn"
+        type="button"
+        data-action="auth-signout"
+        class="hidden w-full py-3 bg-gray-50 text-gray-500 rounded-2xl text-xs font-black active:scale-95"
+      >
+        登出
+      </button>
+    </div>
+  `;
+
+  const sections = settingsRoot.querySelectorAll("section");
+  if (sections.length >= 2) {
+    settingsRoot.insertBefore(section, sections[2]);
+  } else {
+    settingsRoot.appendChild(section);
+  }
+}
+
+function updateAuthUI() {
+  const user = dataService.getCurrentUser();
+  const statusEl = safeEl("auth-status-text");
+  const signInBtn = safeEl("auth-signin-btn");
+  const signOutBtn = safeEl("auth-signout-btn");
+
+  if (statusEl) {
+    statusEl.innerText = user
+      ? `已登入：${user.displayName || user.email || user.uid}`
+      : "未登入（僅本機模式）";
+  }
+
+  if (signInBtn) signInBtn.classList.toggle("hidden", !!user);
+  if (signOutBtn) signOutBtn.classList.toggle("hidden", !user);
+}
+
+async function signInWithGoogleFlow() {
+  try {
+    await dataService.signInWithGoogle();
+    notesLibrary = dataService.getNotes();
+    currentNoteData = notesLibrary?.[0] || null;
+    updateAuthUI();
+    renderCategoryFilters();
+    renderNotesList();
+    renderReviewSelection();
+    renderTrashList();
+    console.info("[ui] sign-in flow completed");
+  } catch (err) {
+    console.error("[ui] sign-in failed:", err);
+    alert(`Google 登入失敗：${err.message || "未知錯誤"}`);
+  }
+}
+
+async function signOutFlow() {
+  try {
+    await dataService.signOut();
+    updateAuthUI();
+    console.info("[ui] sign-out completed");
+  } catch (err) {
+    console.error("[ui] sign-out failed:", err);
+    alert(`登出失敗：${err.message || "未知錯誤"}`);
+  }
+}
+
+async function initializePersistedState() {
+  mountAuthControlsIfNeeded();
+
+  const loadedNotes = await dataService.init(DEFAULT_NOTES_LIBRARY);
+  notesLibrary = Array.isArray(loadedNotes) && loadedNotes.length
+    ? loadedNotes
+    : JSON.parse(JSON.stringify(DEFAULT_NOTES_LIBRARY));
+
+  quizHistory = dataService.getQuizHistory();
+  wrongQuestions = dataService.getWrongQuestions();
+
+  dataService.onNotesChanged((nextNotes) => {
+    notesLibrary = Array.isArray(nextNotes) ? nextNotes : [];
+    currentNoteData = notesLibrary?.[0] || null;
+    renderCategoryFilters();
+    renderNotesList();
+    renderReviewSelection();
+    renderTrashList();
+  });
+
+  dataService.onLearningChanged(({ quizHistory: nextHistory, wrongQuestions: nextWrong }) => {
+    quizHistory = Array.isArray(nextHistory) ? nextHistory : [];
+    wrongQuestions = Array.isArray(nextWrong) ? nextWrong : [];
+    renderLearningDashboard();
+    renderSRSSection();
+  });
+
+  const loadedSettings = await getStorageValueWithLegacyFallback(
+    STORAGE_KEYS.SETTINGS,
+    DEFAULT_APP_SETTINGS,
+    (raw) => parseJsonSafe(raw, DEFAULT_APP_SETTINGS),
+  );
+  appSettings = {
+    ...DEFAULT_APP_SETTINGS,
+    ...(loadedSettings || {}),
+  };
+
+  const loadedTranscript = await getStorageValueWithLegacyFallback(
+    STORAGE_KEYS.TEMP_TRANSCRIPT,
+    "",
+    (raw) => String(raw || ""),
+  );
+  fullTranscript = String(loadedTranscript || "");
+
+  tempSelectedAvatar = appSettings.avatarSeed;
+  currentNoteData = notesLibrary?.[0] || null;
+  updateAuthUI();
+  renderLearningDashboard();
+  renderSRSSection();
+}
 
 /**
  * =========================================================
@@ -412,6 +606,22 @@ function debounce(fn, delay = 150) {
     if (t) clearTimeout(t);
     t = setTimeout(() => fn(...args), delay);
   };
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatHighlightedBullet(value) {
+  return escapeHtml(value).replace(
+    /\*\*(.*?)\*\*/g,
+    '<span class="text-[#13B5B1] font-black">$1</span>',
+  );
 }
 
 function formatHTMLDateToNoteDate(htmlDate) {
@@ -495,7 +705,7 @@ function saveSettingsFromUI() {
   appSettings.nickname = safeEl("settings-nickname")?.value || "Memo";
   appSettings.avatarSeed = tempSelectedAvatar;
   appSettings.aiStyle = safeEl("settings-ai-style")?.value || "default";
-  localStorage.setItem("president_settings", JSON.stringify(appSettings));
+  void persistStorageValue(STORAGE_KEYS.SETTINGS, appSettings);
   updateHomeGreeting();
   alert("您的個人檔案已同步更新 ✨");
   window.navigateTo("page-home");
@@ -508,7 +718,9 @@ function saveSettingsFromUI() {
  */
 
 function saveNotesToDisk() {
-  localStorage.setItem("president_notes", JSON.stringify(notesLibrary));
+  void dataService.persistNotesSnapshot(notesLibrary).catch((err) => {
+    console.error("[ui] saveNotesToDisk sync failed:", err);
+  });
 }
 
 function markNoteDeleted(noteId) {
@@ -525,49 +737,282 @@ function markNoteDeleted(noteId) {
  * =========================================================
  */
 
+function getTranscriptText() {
+  return `${fullTranscript}${lastInterim}`.trim();
+}
+
+function persistTempTranscript(text = getTranscriptText()) {
+  void persistStorageValue(STORAGE_KEYS.TEMP_TRANSCRIPT, text || "");
+}
+
+function clearRecognitionStartTimeout() {
+  if (!startTimeoutTimer) return;
+  clearTimeout(startTimeoutTimer);
+  startTimeoutTimer = null;
+}
+
+function stopNoResultWatchdog() {
+  if (!noResultWatchdogTimer) return;
+  clearInterval(noResultWatchdogTimer);
+  noResultWatchdogTimer = null;
+}
+
+function hardRebuildRecognition() {
+  // Rebuild recognition instance after repeated failures to recover bad internal state.
+  recognition = null;
+  isRecognitionStarting = false;
+  isStoppingRecognition = false;
+  clearRecognitionStartTimeout();
+  initRecognition();
+}
+
+function startNoResultWatchdog() {
+  stopNoResultWatchdog();
+
+  noResultWatchdogTimer = setInterval(() => {
+    if (!isRecording || isStoppingRecognition || !recognition) return;
+
+    const now = Date.now();
+    if (now - lastResultAt <= NO_RESULT_TIMEOUT_MS) return;
+    if (now - lastRestartAt <= RESTART_GRACE_MS) return;
+
+    // Soft restart only: stop then start, and persist first to reduce loss on interruption.
+    persistTempTranscript(getTranscriptText());
+    stopRecognitionSafely();
+
+    setTimeout(() => {
+      if (!isRecording) return;
+      const ok = startRecognitionSafely();
+      if (!ok) {
+        console.warn("Watchdog soft restart start() failed");
+      }
+    }, 700);
+  }, WATCHDOG_INTERVAL_MS);
+}
+
+function stopRecognitionSafely() {
+  if (!recognition) return;
+  isStoppingRecognition = true;
+  clearRecognitionStartTimeout();
+  if (recognitionRestartTimer) {
+    clearTimeout(recognitionRestartTimer);
+    recognitionRestartTimer = null;
+  }
+  try {
+    recognition.stop();
+  } catch (err) {
+    isStoppingRecognition = false;
+    console.warn("Recognition stop skipped:", err);
+  }
+}
+
+function startRecognitionSafely() {
+  if (!recognition) initRecognition();
+  if (!recognition || isRecognitionStarting) return false;
+
+  isRecognitionStarting = true;
+  clearRecognitionStartTimeout();
+  lastRestartAt = Date.now();
+
+  startTimeoutTimer = setTimeout(() => {
+    // Guard against start() stuck without onstart callback.
+    if (isRecognitionStarting) {
+      isRecognitionStarting = false;
+      console.warn("Recognition start timed out; unlock start gate for retry.");
+    }
+    startTimeoutTimer = null;
+  }, RECOGNITION_START_TIMEOUT_MS);
+
+  try {
+    recognition.start();
+    return true;
+  } catch (err) {
+    clearRecognitionStartTimeout();
+    isRecognitionStarting = false;
+    console.error("Recognition start failed:", err);
+    return false;
+  }
+}
+
+function getRecognitionErrorMessage(errorCode) {
+  const map = {
+    "not-allowed": "麥克風權限被拒絕，請允許權限後重試。",
+    "service-not-allowed": "瀏覽器禁止語音辨識服務，請檢查瀏覽器設定。",
+    "audio-capture": "找不到可用麥克風裝置，請確認輸入裝置。",
+    network: "語音辨識網路中斷，請檢查網路後重試。",
+    "no-speech": "未偵測到語音輸入，請靠近麥克風再試一次。",
+  };
+  return map[errorCode] || `語音辨識發生錯誤：${errorCode || "unknown"}`;
+}
+
+function splitTranscriptIntoReadableChunks(text, maxChars = 28, minChars = 14) {
+  const source = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!source) return [];
+
+  const seeds = source
+    .split(/[。！？!?\n；;]+/)
+    .map((piece) => piece.trim())
+    .filter(Boolean);
+
+  const chunks = [];
+  const pieces = seeds.length ? seeds : [source];
+
+  pieces.forEach((piece) => {
+    let rest = piece;
+
+    while (rest.length > maxChars) {
+      const windowText = rest.slice(0, maxChars + 1);
+      let splitAt = -1;
+      ["，", "、", ",", " "].forEach((mark) => {
+        const idx = windowText.lastIndexOf(mark);
+        if (idx > splitAt) splitAt = idx;
+      });
+
+      if (splitAt < minChars) splitAt = maxChars;
+      const part = rest.slice(0, splitAt).trim();
+      if (part) chunks.push(part);
+      rest = rest.slice(splitAt).trim();
+    }
+
+    if (rest) chunks.push(rest);
+  });
+
+  return chunks;
+}
+
 function initRecognition() {
   if (!("webkitSpeechRecognition" in window)) {
     console.warn("This browser does not support webkitSpeechRecognition.");
+    recognition = null;
     return;
   }
+
+  if (recognition) return;
 
   recognition = new window.webkitSpeechRecognition();
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.lang = "zh-TW";
 
+  recognition.onstart = () => {
+    clearRecognitionStartTimeout();
+    isRecognitionStarting = false;
+    recognitionEndFailCount = 0;
+    lastRestartAt = Date.now();
+    lastErrorCode = "";
+  };
+
   recognition.onresult = (event) => {
+    lastResultAt = Date.now();
     let interim = "";
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       const piece = event.results[i][0]?.transcript || "";
-      if (event.results[i].isFinal) fullTranscript += piece;
-      else interim += piece;
+      if (event.results[i].isFinal) {
+        fullTranscript += piece;
+        const finalChunks = splitTranscriptIntoReadableChunks(piece);
+        finalChunks.forEach((chunk) => {
+          finalizedSpeechTimeline.push({
+            second: Math.max(0, Math.floor(seconds || 0)),
+            text: chunk,
+          });
+        });
+      } else interim += piece;
     }
 
     lastInterim = interim;
-    localStorage.setItem("temp_transcript", fullTranscript + interim || "");
+    const displayText = getTranscriptText();
+    persistTempTranscript(displayText);
 
     const el = safeEl("live-transcript");
-    if (el) el.innerText = fullTranscript + interim || "正在聽課中...";
+    if (el) el.innerText = displayText || "正在聽課中...";
+  };
+
+  recognition.onerror = (event) => {
+    const code = event?.error || "unknown";
+
+    if (code === "aborted" && isStoppingRecognition) return;
+
+    const msg = getRecognitionErrorMessage(code);
+    console.error("Recognition error:", code, event);
+
+    if (["not-allowed", "service-not-allowed", "audio-capture"].includes(code)) {
+      isRecording = false;
+      stopNoResultWatchdog();
+      clearRecognitionStartTimeout();
+      clearInterval(timerInterval);
+      alert(msg);
+      window.navigateTo("page-list");
+      return;
+    }
+
+    if (["network", "no-speech", "aborted"].includes(code)) {
+      lastErrorCode = code;
+    }
+
+    console.warn(msg);
   };
 
   recognition.onend = () => {
+    isRecognitionStarting = false;
+
+    if (isStoppingRecognition) {
+      isStoppingRecognition = false;
+      return;
+    }
+
     if (!isRecording) return;
-    if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
+
+    if (recognitionRestartTimer) {
+      clearTimeout(recognitionRestartTimer);
+      recognitionRestartTimer = null;
+    }
+
+    if (recognitionEndFailCount >= RECOGNITION_MAX_RESTARTS) {
+      const snapshot = getTranscriptText();
+      persistTempTranscript(snapshot);
+      isRecording = false;
+      stopNoResultWatchdog();
+      clearRecognitionStartTimeout();
+      clearInterval(timerInterval);
+      alert("語音辨識已中斷且重啟失敗，逐字稿已暫存。請重新開始錄音。");
+      window.navigateTo("page-list");
+      return;
+    }
+
     recognitionRestartTimer = setTimeout(() => {
-      try {
-        recognition.start();
-        recognitionEndFailCount = 0;
-      } catch (e) {}
-    }, 600);
+      recognitionEndFailCount += 1;
+      const shouldHardRebuild = recognitionEndFailCount >= HARD_REBUILD_AFTER_FAILS;
+      if (shouldHardRebuild) {
+        hardRebuildRecognition();
+      }
+
+      const ok = startRecognitionSafely();
+      if (!ok) {
+        console.warn(
+          `Recognition restart attempt ${recognitionEndFailCount}/${RECOGNITION_MAX_RESTARTS} failed`,
+        );
+      }
+    }, 700);
   };
 }
 
 function startRecordPage() {
+  if (isRecording || isGeneratingSummary) return;
+
+  initRecognition();
+
   fullTranscript = "";
   lastInterim = "";
+  finalizedSpeechTimeline = [];
+  persistTempTranscript("");
   seconds = 0;
   isRecording = true;
+  recognitionEndFailCount = 0;
+  lastErrorCode = "";
+  lastResultAt = Date.now();
+  lastRestartAt = Date.now();
 
   const timerEl = safeEl("record-timer");
   const liveEl = safeEl("live-transcript");
@@ -576,15 +1021,24 @@ function startRecordPage() {
 
   window.navigateTo("page-record");
 
-  if (recognition) {
-    try {
-      recognition.start();
-    } catch (_) {}
+  const started = startRecognitionSafely();
+  if (!started) {
+    alert("語音辨識啟動失敗，請檢查麥克風權限後重試。");
+    isRecording = false;
+    stopNoResultWatchdog();
+    clearRecognitionStartTimeout();
+    window.navigateTo("page-list");
+    return;
   }
+
+  startNoResultWatchdog();
 
   clearInterval(timerInterval);
   timerInterval = setInterval(() => {
     seconds++;
+    if (seconds % Math.floor(PERIODIC_TRANSCRIPT_PERSIST_MS / 1000) === 0) {
+      persistTempTranscript(getTranscriptText());
+    }
     const m = Math.floor(seconds / 60)
       .toString()
       .padStart(2, "0");
@@ -596,25 +1050,117 @@ function startRecordPage() {
 
 function cancelRecording() {
   isRecording = false;
-  if (recognition) recognition.stop();
+  stopNoResultWatchdog();
+  clearRecognitionStartTimeout();
+  stopRecognitionSafely();
   clearInterval(timerInterval);
+  persistTempTranscript(getTranscriptText());
   window.navigateTo("page-list");
 }
 
+function parseDurationToSeconds(durationText) {
+  const parts = String(durationText || "00:00")
+    .split(":")
+    .map((n) => Number(n));
+  if (parts.length !== 2 || parts.some((n) => !Number.isFinite(n) || n < 0)) {
+    return 0;
+  }
+  return parts[0] * 60 + parts[1];
+}
+
+function formatSecondsToTimestamp(totalSeconds) {
+  const sec = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const m = Math.floor(sec / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = (sec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function buildSegmentsFromTranscript(
+  transcript,
+  totalSeconds = 0,
+  timeline = [],
+) {
+  const timelineSegments = Array.isArray(timeline)
+    ? timeline
+        .map((item) => ({
+          second: Math.max(0, Math.floor(Number(item?.second) || 0)),
+          text: String(item?.text || "").trim(),
+        }))
+        .filter((item) => item.text)
+    : [];
+
+  if (timelineSegments.length > 0) {
+    return timelineSegments.map((item) => ({
+      time: formatSecondsToTimestamp(item.second),
+      text: item.text,
+    }));
+  }
+
+  const raw = String(transcript || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return [];
+
+  const merged = splitTranscriptIntoReadableChunks(raw);
+  if (merged.length === 0) return [];
+
+  const effectiveTotalSeconds = Math.max(
+    0,
+    Math.floor(Number(totalSeconds) || 0),
+    Math.ceil(raw.length / 6),
+  );
+  const totalChars = merged.reduce((acc, item) => acc + item.length, 0);
+  let passedChars = 0;
+
+  return merged.map((text, idx) => {
+    const ratioBase = totalChars > 0 ? passedChars / totalChars : idx / Math.max(merged.length - 1, 1);
+    const secondAt = effectiveTotalSeconds > 0
+      ? Math.round(ratioBase * effectiveTotalSeconds)
+      : idx * 8;
+    passedChars += text.length;
+    return {
+      time: formatSecondsToTimestamp(secondAt),
+      text,
+    };
+  });
+}
+
 async function stopRecording() {
+  if (isGeneratingSummary) return;
+
+  isGeneratingSummary = true;
   isRecording = false;
-  if (recognition) recognition.stop();
+  stopNoResultWatchdog();
+  clearRecognitionStartTimeout();
+  stopRecognitionSafely();
   clearInterval(timerInterval);
 
-  const finalTranscript = (fullTranscript + lastInterim).trim();
-  localStorage.setItem("temp_transcript", finalTranscript || "");
+  const finalTranscript = getTranscriptText();
+  persistTempTranscript(finalTranscript || "");
 
   const durationText = safeEl("record-timer")?.innerText || "00:00";
+  const durationFromUi = parseDurationToSeconds(durationText);
+  const totalRecordedSeconds = Math.max(durationFromUi, Math.floor(seconds || 0));
+  const finalDurationText = formatSecondsToTimestamp(totalRecordedSeconds);
+
+  if (!finalTranscript) {
+    alert("尚未取得有效逐字稿，請再錄一次。若中途失敗可檢查麥克風權限。");
+    window.navigateTo("page-list");
+    isGeneratingSummary = false;
+    return;
+  }
+
   window.navigateTo("page-loading");
 
-  const prompt = `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。逐字稿：${
-    fullTranscript + lastInterim || "模擬內容"
-  }`;
+  const prompt = `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。請只根據提供內容整理，不要補充逐字稿中不存在的內容。逐字稿：${finalTranscript}`;
+
+  const speechSegments = buildSegmentsFromTranscript(
+    finalTranscript,
+    totalRecordedSeconds,
+    finalizedSpeechTimeline,
+  );
 
   const schema = {
     type: "OBJECT",
@@ -631,51 +1177,37 @@ async function stopRecording() {
           },
         },
       },
-      segments: {
-        type: "ARRAY",
-        items: {
-          type: "OBJECT",
-          properties: { time: { type: "STRING" }, text: { type: "STRING" } },
-        },
-      },
     },
   };
 
   try {
-    const data = await callGemini(
-      prompt,
-      schema,
-      appSettings.aiStyle || "default",
-    );
-
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    const clean = String(raw)
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
-    const result = JSON.parse(clean);
+    const data = await callGemini(prompt, schema, appSettings.aiStyle || "default");
+    const raw = extractAiText(data);
+    const result = normalizeAiNotePayload(safeParseAiJson(raw));
 
     const newNote = {
       ...result,
       id: Date.now().toString(),
-      title: result?.title?.trim() ? result.title.trim() : "新筆記",
-      intro: result?.intro || "尚無摘要",
       category: "未分類",
       date: `${new Date().getMonth() + 1} / ${new Date().getDate()}`,
-      duration: durationText,
+      duration: finalDurationText,
+      segments: speechSegments,
+      rawTranscript: finalTranscript,
       isFavorite: false,
       isDeleted: false,
     };
 
-    notesLibrary.unshift(newNote);
-    saveNotesToDisk();
+    const nextNotes = await dataService.createNote(newNote);
+    notesLibrary = Array.isArray(nextNotes) ? nextNotes : [newNote, ...notesLibrary];
 
     window.loadNoteDetails(newNote.id);
-    localStorage.removeItem("temp_transcript");
+    void storage.removeItem(STORAGE_KEYS.TEMP_TRANSCRIPT);
   } catch (err) {
     console.error("處理失敗:", err);
-    alert("生成失敗，但逐字稿已為您暫存。");
+    alert(`生成失敗，但逐字稿已為您暫存。\n原因：${err.message || "未知錯誤"}`);
     window.navigateTo("page-list");
+  } finally {
+    isGeneratingSummary = false;
   }
 }
 
@@ -685,8 +1217,44 @@ async function stopRecording() {
  * =========================================================
  */
 
-async function callGemini(prompt, responseSchema = null, retryCount = 0) {
-  const styleToUse = appSettings?.aiStyle || "default";
+async function callGemini(
+  prompt,
+  responseSchema = null,
+  aiStyle = "default",
+  retryCount = 0,
+) {
+  const MAX_RETRY = 5;          // 最多重試 5 次（不含首次）
+  const MAX_RETRY_503 = 3;      // 503 服務暫時不可用，最多重試 3 次
+  const base = Math.pow(2, retryCount) * 1000;
+  const jitter = base * (0.7 + Math.random() * 0.6);
+
+  const shouldRetryNetworkError = (err) => {
+    // AbortError 代表前端 25s 計時器主動取消，不應重試
+    if (err?.name === "AbortError") return false;
+    const msg = String(err?.message || "");
+    return /network|fetch/i.test(msg);
+  };
+
+  const shouldRetryStatus = (status, retry) => {
+    if (status === 429) return false;           // 限流中，絕對不重試
+    if (status === 503) return retry < MAX_RETRY_503;
+    if (status >= 500) return retry < MAX_RETRY;
+    return false;
+  };
+
+  const extractRemoteMessage = (data, status) =>
+    String(data?.error?.message || data?.error || `API 請求失敗 (${status})`);
+
+  const isQuotaExhaustedError = (status, data) => {
+    const remoteMsg = extractRemoteMessage(data, status);
+    return /(quota|配額|resource[_\s-]?exhausted|insufficient[_\s-]?quota|quota[_\s-]?exceeded|billing|exceed.*limit)/i
+      .test(remoteMsg);
+  };
+
+  const styleToUse = aiStyle || appSettings?.aiStyle || "default";
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
 
   try {
     const response = await fetch("/api/gemini", {
@@ -697,19 +1265,108 @@ async function callGemini(prompt, responseSchema = null, retryCount = 0) {
         schema: responseSchema,
         aiStyle: styleToUse || "default",
       }),
+      signal: controller.signal,
     });
 
-    if (!response.ok) throw new Error("middle return Failed");
-    return await response.json();
+    clearTimeout(timeoutId);
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      // 429 限流特殊處理：使用 alert 提示使用者
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("Retry-After") || "60";
+        const errorMsg = `請求過於頻繁，請等待 ${retryAfter} 秒後再試。`;
+        alert(errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      // Quota/Billing 類錯誤直接停止重試，避免無效等待
+      if (isQuotaExhaustedError(response.status, data)) {
+        throw new Error(
+          "目前 AI 配額不足（Quota Exceeded），已停止自動重試。請稍後再試，或檢查 API/Billing 配額。",
+        );
+      }
+
+      if (shouldRetryStatus(response.status, retryCount)) {
+        await new Promise((r) => setTimeout(r, jitter));
+        return callGemini(prompt, responseSchema, styleToUse, retryCount + 1);
+      }
+
+      const remoteMsg = extractRemoteMessage(data, response.status);
+      throw new Error(remoteMsg);
+    }
+
+    if (!data) throw new Error("AI 回應格式錯誤，請稍後再試。")
+
+    return data;
   } catch (err) {
-    if (retryCount < 5) {
-      const base = Math.pow(2, retryCount) * 1000;
-      const jitter = base * (0.7 + Math.random() * 0.6);
+    clearTimeout(timeoutId);
+    if (retryCount < MAX_RETRY && shouldRetryNetworkError(err)) {
       await new Promise((r) => setTimeout(r, jitter));
-      return callGemini(prompt, responseSchema, retryCount + 1);
+      return callGemini(prompt, responseSchema, styleToUse, retryCount + 1);
+    }
+    // AbortError：明確告知使用者是超時，而非網路錯誤
+    if (err?.name === "AbortError") {
+      throw new Error("AI 請求超時（25 秒），請稍後再試。");
     }
     throw err;
   }
+}
+
+function extractAiText(data) {
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+}
+
+function safeParseAiJson(rawText) {
+  const raw = String(rawText || "").trim();
+  if (!raw) throw new Error("AI 回傳空內容");
+
+  const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+
+  const candidates = [cleaned];
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(cleaned.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (_) {}
+  }
+
+  throw new Error("AI JSON 解析失敗，請重試。");
+}
+
+function normalizeAiNotePayload(payload) {
+  const sections = Array.isArray(payload?.sections)
+    ? payload.sections
+        .map((sec) => ({
+          category: String(sec?.category || "未分類重點"),
+          items: Array.isArray(sec?.items)
+            ? sec.items.map((i) => String(i || "")).filter(Boolean)
+            : [],
+        }))
+        .filter((sec) => sec.items.length > 0)
+    : [];
+
+  const segments = Array.isArray(payload?.segments)
+    ? payload.segments
+        .map((seg) => ({
+          time: String(seg?.time || ""),
+          text: String(seg?.text || "").trim(),
+        }))
+        .filter((seg) => seg.text)
+    : [];
+
+  return {
+    title: String(payload?.title || "").trim() || "新筆記",
+    intro: String(payload?.intro || "").trim() || "尚無摘要",
+    sections,
+    segments,
+  };
 }
 
 /**
@@ -738,9 +1395,9 @@ function renderCategoryFilters() {
   const optionsHTML = allCategories
     .map(
       (cat) =>
-        `<option value="${cat}" ${
+        `<option value="${escapeHtml(cat)}" ${
           currentFilterCategory === cat ? "selected" : ""
-        }>分類: ${cat}</option>`,
+        }>分類: ${escapeHtml(cat)}</option>`,
     )
     .join("");
 
@@ -772,17 +1429,12 @@ function renderNoteUI(data) {
       const card = document.createElement("div");
       card.className = "note-highlight";
       card.innerHTML = `
-        <div class="font-black text-[#13B5B1] text-xs mb-3 uppercase tracking-wider">${sec.category || ""}</div>
+        <div class="font-black text-[#13B5B1] text-xs mb-3 uppercase tracking-wider">${escapeHtml(sec.category || "")}</div>
         <ul class="space-y-3">
           ${(sec.items || [])
             .map(
               (i) => `
-              <li class="text-[12px] text-gray-700 font-bold">• ${String(
-                i,
-              ).replace(
-                /\*\*(.*?)\*\*/g,
-                '<span class="text-[#13B5B1] font-black">$1</span>',
-              )}</li>
+              <li class="text-[12px] text-gray-700 font-bold">• ${formatHighlightedBullet(i)}</li>
             `,
             )
             .join("")}
@@ -802,12 +1454,12 @@ function renderNoteUI(data) {
         <div class="timeline-dot ${idx === 0 ? "active" : ""}"></div>
         <div class="text-[9px] ${
           idx === 0 ? "text-[#13B5B1]" : "text-gray-300"
-        } font-black mb-1 tracking-wider">${seg.time || ""}</div>
+        } font-black mb-1 tracking-wider">${escapeHtml(seg.time || "")}</div>
         <div class="text-xs ${
           idx === 0
             ? "text-gray-800 font-black bg-[#F0F9F9] -mx-4 px-4 py-2 rounded-2xl shadow-sm border border-[#13B5B1]/5"
             : "text-gray-400 font-bold"
-        } leading-relaxed">${seg.text || ""}</div>
+        } leading-relaxed">${escapeHtml(seg.text || "")}</div>
       `;
       transcriptContainer.appendChild(item);
     });
@@ -845,10 +1497,11 @@ function renderNotesList() {
     const msg = currentFilterDate
       ? `${currentFilterDate} 沒有紀錄`
       : "目前沒有筆記";
+    const safeMsg = escapeHtml(msg);
     container.innerHTML = `
       <div class="flex flex-col items-center justify-center py-20 text-gray-300 opacity-60">
         <i class="fas fa-file-invoice-alt text-4xl mb-4"></i>
-        <p class="text-sm font-black">${msg}</p>
+        <p class="text-sm font-black">${safeMsg}</p>
       </div>
     `;
     return;
@@ -867,33 +1520,37 @@ function renderNotesList() {
     const dateParts = String(note.date || "1 / 1").split("/");
     const month = dateParts[0] ? dateParts[0].trim() : "1";
     const day = dateParts[1] ? dateParts[1].trim() : "1";
+    const safeTitle = escapeHtml(note.title || "未命名筆記");
+    const safeCategory = escapeHtml(note.category || "未分類");
+    const safeIntro = escapeHtml(note.intro || "尚無摘要內容...");
+    const safeDuration = escapeHtml(note.duration || "00:00");
 
     wrapper.innerHTML = `
       <div class="card-visual-slot">
         <div class="active-date shadow-sm">
-          <div class="text-[9px] font-bold opacity-80 uppercase">${month}月</div>
-          <div class="text-lg font-black leading-tight">${day}</div>
+          <div class="text-[9px] font-bold opacity-80 uppercase">${escapeHtml(month)}月</div>
+          <div class="text-lg font-black leading-tight">${escapeHtml(day)}</div>
         </div>
       </div>
 
-      <div class="note-card-main" data-action="open-note" data-note-id="${note.id}">
+      <div class="note-card-main" data-action="open-note" data-note-id="${escapeHtml(note.id)}">
         <div class="flex justify-between items-start mb-2">
           <div class="font-black text-gray-800 text-sm leading-snug flex-1">
-            ${note.title || "未命名筆記"}${starHtml}
+            ${safeTitle}${starHtml}
           </div>
           <span class="ml-2 px-2 py-0.5 bg-[#13B5B1]/10 text-[#13B5B1] text-[8px] rounded-full font-black">
-            ${note.category || "未分類"}
+            ${safeCategory}
           </span>
         </div>
 
         <p class="card-intro-text line-clamp-2">
-          ${note.intro || "尚無摘要內容..."}
+          ${safeIntro}
         </p>
 
         <div class="flex justify-between items-center">
           <div class="flex items-center gap-1.5 text-gray-300 font-black tracking-widest">
             <i class="far fa-clock text-[9px]"></i>
-            <span class="text-[8px]">${note.duration || "00:00"}</span>
+            <span class="text-[8px]">${safeDuration}</span>
           </div>
 
           <div class="flex gap-2">
@@ -904,14 +1561,14 @@ function renderNotesList() {
                   : "bg-yellow-50 text-yellow-400"
               } rounded-xl flex items-center justify-center active:scale-95 transition-all"
               data-action="list-toggle-favorite"
-              data-note-id="${note.id}">
+              data-note-id="${escapeHtml(note.id)}">
               <i class="${note.isFavorite ? "fas" : "far"} fa-star text-[10px]"></i>
             </button>
 
             <button type="button"
               class="w-8 h-8 bg-red-50 text-red-400 rounded-xl flex items-center justify-center active:scale-95 transition-all"
               data-action="delete-note"
-              data-note-id="${note.id}">
+              data-note-id="${escapeHtml(note.id)}">
               <i class="fas fa-trash-alt text-[10px]"></i>
             </button>
           </div>
@@ -942,10 +1599,21 @@ function renderTrashList() {
     emptyState.classList.add("hidden");
     container.innerHTML = trashNotes
       .map(
-        (note) => `
+        (note) => {
+          const safeTitle = escapeHtml(note.title || "未命名筆記");
+          const safeCategory = escapeHtml(note.category || "未分類");
+          const safeIntro = escapeHtml(note.intro || "已刪除的筆記摘要...");
+          const safeDuration = escapeHtml(note.duration || "00:00");
+          const safeDate = escapeHtml(note.date || "");
+          const safeDeletedAt = escapeHtml(
+            note.deletedAt ? new Date(note.deletedAt).toLocaleDateString() : "未知",
+          );
+          const safeId = escapeHtml(note.id);
+
+          return `
         <div class="flex gap-4 items-start mb-6 w-full group opacity-85">
           <div class="card-visual-slot pt-4">
-            <div data-action="trash-toggle-note" data-id="${note.id}"
+            <div data-action="trash-toggle-note" data-id="${safeId}"
               class="w-6 h-6 rounded-lg border-2 border-gray-100 flex items-center justify-center transition-all cursor-pointer
               ${
                 selectedTrashNotes.has(note.id)
@@ -962,26 +1630,24 @@ function renderTrashList() {
 
           <div class="note-card-main">
             <div class="flex justify-between items-start mb-2">
-              <div class="font-black text-gray-800 text-sm leading-snug flex-1">${note.title || "未命名筆記"}</div>
+              <div class="font-black text-gray-800 text-sm leading-snug flex-1">${safeTitle}</div>
               <span class="ml-2 px-2 py-0.5 bg-gray-50 text-gray-400 text-[8px] rounded-full font-black border border-gray-100">${
-                note.category || "未分類"
+                safeCategory
               }</span>
             </div>
 
-            <p class="card-intro-text line-clamp-2">${note.intro || "已刪除的筆記摘要..."}</p>
+            <p class="card-intro-text line-clamp-2">${safeIntro}</p>
 
             <div class="flex justify-between items-center mt-2">
               <div class="flex flex-1 items-center gap-4 flex-wrap">
                 <div class="flex items-center gap-1.5 text-gray-300 font-black tracking-widest uppercase">
                   <i class="far fa-clock text-[9px]"></i>
-                  <span class="text-[8px]">${note.duration || "00:00"}</span>
+                  <span class="text-[8px]">${safeDuration}</span>
                 </div>
-                <span class="text-[8px] text-gray-300 font-black tracking-widest uppercase">${note.date || ""}</span>
+                <span class="text-[8px] text-gray-300 font-black tracking-widest uppercase">${safeDate}</span>
                 <div class="text-[8px] text-gray-300 font-black tracking-widest uppercase">
                   <i class="fas fa-history mr-1"></i> 刪除於: ${
-                    note.deletedAt
-                      ? new Date(note.deletedAt).toLocaleDateString()
-                      : "未知"
+                    safeDeletedAt
                   }
                 </div>
               </div>
@@ -989,26 +1655,27 @@ function renderTrashList() {
               <div class="flex gap-2 flex-shrink-0">
                 <button type="button"
                   class="w-8 h-8 bg-gray-50 text-gray-400 rounded-xl flex items-center justify-center active:scale-95 transition-all"
-                  data-action="open-note" data-note-id="${note.id}">
+                  data-action="open-note" data-note-id="${safeId}">
                   <i class="fas fa-external-link-alt text-[10px]"></i>
                 </button>
 
                 <button type="button"
                   class="w-8 h-8 bg-[#13B5B1]/10 text-[#13B5B1] rounded-xl flex items-center justify-center active:scale-95 transition-all"
-                  data-action="trash-restore" data-note-id="${note.id}">
+                  data-action="trash-restore" data-note-id="${safeId}">
                   <i class="fas fa-undo-alt text-[10px]"></i>
                 </button>
 
                 <button type="button"
                   class="w-8 h-8 bg-red-50 text-red-400 rounded-xl flex items-center justify-center active:scale-95 transition-all"
-                  data-action="trash-permadelete" data-note-id="${note.id}">
+                  data-action="trash-permadelete" data-note-id="${safeId}">
                   <i class="fas fa-times text-[10px]"></i>
                 </button>
               </div>
             </div>
           </div>
         </div>
-      `,
+      `;
+        },
       )
       .join("");
   }
@@ -1036,10 +1703,18 @@ function renderReviewSelection() {
 
   noteContainer.innerHTML = availableNotes
     .map(
-      (note) => `
+      (note) => {
+        const safeTitle = escapeHtml(note.title || "未命名筆記");
+        const safeCategory = escapeHtml(note.category || "未分類");
+        const safeIntro = escapeHtml(note.intro || "尚無摘要內容...");
+        const safeDuration = escapeHtml(note.duration || "00:00");
+        const safeDate = escapeHtml(note.date || "");
+        const safeId = escapeHtml(note.id);
+
+        return `
         <div class="flex gap-4 items-start mb-6 w-full group">
           <div class="card-visual-slot pt-4">
-            <div data-action="review-toggle-note" data-id="${note.id}"
+            <div data-action="review-toggle-note" data-id="${safeId}"
               class="w-6 h-6 rounded-lg border-2 border-gray-100 flex items-center justify-center transition-all cursor-pointer
               ${
                 selectedReviewNotes.has(note.id)
@@ -1054,38 +1729,39 @@ function renderReviewSelection() {
             </div>
           </div>
 
-          <div class="note-card-main" data-action="review-toggle-note" data-id="${note.id}">
+          <div class="note-card-main" data-action="review-toggle-note" data-id="${safeId}">
             <div class="flex justify-between items-start mb-2">
               <div class="font-black text-gray-800 text-sm leading-snug flex-1">
-                ${note.title || "未命名筆記"}
+                ${safeTitle}
                 ${note.isFavorite ? '<i class="fas fa-star text-yellow-400 text-[10px] ml-1"></i>' : ""}
               </div>
               <span class="ml-2 px-2 py-0.5 bg-[#13B5B1]/10 text-[#13B5B1] text-[8px] rounded-full font-black whitespace-nowrap">
-                ${note.category || "未分類"}
+                ${safeCategory}
               </span>
             </div>
 
-            <p class="card-intro-text line-clamp-2">${note.intro || "尚無摘要內容..."}</p>
+            <p class="card-intro-text line-clamp-2">${safeIntro}</p>
 
             <div class="flex justify-between items-center mt-2">
               <div class="flex justify-start items-center gap-4">
                 <div class="flex items-center gap-1.5 text-gray-300 font-black tracking-widest uppercase">
                   <i class="far fa-clock text-[9px]"></i>
-                  <span class="text-[8px]">${note.duration || "00:00"}</span>
+                  <span class="text-[8px]">${safeDuration}</span>
                 </div>
-                <span class="text-[8px] text-gray-300 font-black tracking-widest uppercase">${note.date || ""}</span>
+                <span class="text-[8px] text-gray-300 font-black tracking-widest uppercase">${safeDate}</span>
               </div>
 
               <button type="button"
                 class="w-8 h-8 bg-gray-50 text-gray-400 rounded-xl flex items-center justify-center active:scale-95 transition-all"
                 data-action="open-note"
-                data-note-id="${note.id}">
+                data-note-id="${safeId}">
                 <i class="fas fa-external-link-alt text-[10px]"></i>
               </button>
             </div>
           </div>
         </div>
-      `,
+      `;
+      },
     )
     .join("");
 
@@ -1182,7 +1858,7 @@ function showModal(text) {
   content.innerHTML = `
     <div class="flex flex-col items-center py-12">
       <i class="fas fa-magic text-[#13B5B1] text-4xl animate-bounce mb-6"></i>
-      <p class="text-sm font-black text-gray-400">${text}</p>
+      <p class="text-sm font-black text-gray-400">${escapeHtml(text)}</p>
     </div>
   `;
 }
@@ -1200,6 +1876,87 @@ function openConfirmModal() {
 function closeConfirmModal() {
   const m = safeEl("confirm-modal");
   if (m) m.style.display = "none";
+}
+
+/**
+ * ============================================================
+ * 統一反饋系統（HTML+CSS 替換 alert）
+ * ============================================================
+ */
+function showFeedback(message, type = "info", title = null) {
+  const feedbackModal = safeEl("feedback-modal");
+  const iconEl = safeEl("feedback-icon");
+  const titleEl = safeEl("feedback-title");
+  const textEl = safeEl("feedback-text");
+  const btnEl = safeEl("feedback-close-btn");
+
+  if (!feedbackModal || !iconEl || !textEl || !titleEl) return;
+
+  // 設定圖示、顏色和標題
+  const configs = {
+    error: {
+      icon: "❌",
+      bgClass: "bg-red-50",
+      textClass: "text-red-600",
+      btnClass: "bg-red-500 hover:bg-red-600",
+      defaultTitle: "操作失敗",
+    },
+    success: {
+      icon: "✅",
+      bgClass: "bg-green-50",
+      textClass: "text-green-600",
+      btnClass: "bg-green-500 hover:bg-green-600",
+      defaultTitle: "操作成功",
+    },
+    warning: {
+      icon: "⚠️",
+      bgClass: "bg-yellow-50",
+      textClass: "text-yellow-600",
+      btnClass: "bg-yellow-500 hover:bg-yellow-600",
+      defaultTitle: "警告訊息",
+    },
+    info: {
+      icon: "ℹ️",
+      bgClass: "bg-blue-50",
+      textClass: "text-blue-600",
+      btnClass: "bg-blue-500 hover:bg-blue-600",
+      defaultTitle: "系統訊息",
+    },
+  };
+
+  const config = configs[type] || configs.info;
+
+  // 更新樣式
+  iconEl.textContent = config.icon;
+  iconEl.className = `w-16 h-16 ${config.bgClass} text-3xl rounded-full flex items-center justify-center mx-auto mb-4`;
+  titleEl.textContent = title || config.defaultTitle;
+  textEl.textContent = escapeHtml(message);
+
+  btnEl.className = `w-full py-3 ${config.btnClass} text-white rounded-2xl font-bold text-sm transition`;
+
+  // 顯示模態
+  feedbackModal.style.display = "flex";
+
+  // 自動關閉按鈕
+  btnEl.onclick = () => {
+    feedbackModal.style.display = "none";
+  };
+}
+
+function showError(message, title = "操作失敗") {
+  showFeedback(message, "error", title);
+}
+
+function showSuccess(message, title = "操作成功") {
+  showFeedback(message, "success", title);
+}
+
+function showWarning(message, title = "警告訊息") {
+  showFeedback(message, "warning", title);
+}
+
+function showInfo(message, title = "系統訊息") {
+  showFeedback(message, "info", title);
 }
 
 function changeCategory() {
@@ -1226,17 +1983,18 @@ function changeCategory() {
 
   finalCategories.forEach((cat) => {
     const isActive = (currentNoteData.category || "未分類") === cat;
+    const safeCat = escapeHtml(cat);
     html += `
       <button type="button"
         data-action="set-category"
-        data-category="${cat}"
+        data-category="${safeCat}"
         class="py-2.5 px-1 text-center font-bold text-[11px] rounded-2xl border transition-all leading-tight
         ${
           isActive
             ? "bg-[#13B5B1] text-white border-[#13B5B1]"
             : "bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100"
         }">
-        ${cat}
+        ${safeCat}
       </button>
     `;
   });
@@ -1408,11 +2166,11 @@ function showQuizResult() {
       <p class="text-xs text-gray-400 font-bold px-6 leading-relaxed mb-8">${comment}</p>
       
       <div class="flex flex-col gap-3 px-6">
-        <button onclick="navigateTo('page-settings'); closeModal();" 
+        <button type="button" data-action="open-learning-progress"
           class="w-full py-4 bg-[#13B5B1] text-white rounded-2xl text-xs font-black shadow-lg">
           查看長期學習進度
         </button>
-        <button onclick="closeModal()" 
+        <button type="button" data-action="modal-close"
           class="w-full py-4 bg-gray-50 text-gray-400 rounded-2xl text-xs font-black">
           返回筆記
         </button>
@@ -1626,7 +2384,7 @@ ${contentData}`;
       <div class="text-center py-10">
         <i class="fas fa-exclamation-triangle text-orange-400 text-3xl mb-4"></i>
         <p class="text-sm font-black text-gray-500">哎呀！Memo助手斷線了，請再試一次。</p>
-        <button type="button" onclick="closeModal()" class="mt-4 text-xs text-[#13B5B1] font-black underline">關閉視窗</button>
+        <button type="button" data-action="modal-close" class="mt-4 text-xs text-[#13B5B1] font-black underline">關閉視窗</button>
       </div>
     `;
   }
@@ -1636,17 +2394,19 @@ function renderQuizUI(result, type, count) {
   let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 認知挑戰：${type === "fib" ? "填空測驗" : "智能小考"}</h3>`;
 
   result.questions.forEach((q, qIdx) => {
+    const safeQuestion = escapeHtml(q.question || "");
     html += `
       <div class="mb-8 border-b border-gray-50 pb-6">
-        <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${q.question}</p>
+        <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${safeQuestion}</p>
         <div class="space-y-3">`;
 
     if (type === "fib") {
+      const safeAnswer = escapeHtml(q.answer || "");
       html += `
         <div class="flex gap-2">
           <input type="text" id="fib-input-${qIdx}" placeholder="請輸入答案..."
             class="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-[#13B5B1]">
-          <button type="button" data-action="check-fib" data-idx="${qIdx}" data-answer="${q.answer}"
+          <button type="button" data-action="check-fib" data-idx="${qIdx}" data-answer="${safeAnswer}"
             class="px-4 bg-[#13B5B1] text-white rounded-xl text-xs font-black shadow-md active:scale-95 transition-all">
             檢查
           </button>
@@ -1658,7 +2418,7 @@ function renderQuizUI(result, type, count) {
         .map(
           (opt, oIdx) => `
         <button type="button" class="quiz-option" data-action="quiz-answer"
-          data-selected="${oIdx}" data-correct="${q.answer}">${opt}</button>
+          data-selected="${oIdx}" data-correct="${escapeHtml(q.answer)}">${escapeHtml(opt)}</button>
       `,
         )
         .join("");
@@ -1679,14 +2439,13 @@ async function expandContent() {
   try {
     const data = await callGemini(prompt);
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const safeText = escapeHtml(text)
+      .replace(/\n/g, "<br>")
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
     safeEl("modal-content").innerHTML = `
       <div class="text-left">
         <h3 class="text-lg font-black mb-4 text-[#13B5B1]">📚 Memo助手的延伸筆記</h3>
-        <div class="text-sm leading-relaxed text-gray-600 whitespace-pre-wrap">${String(
-          text,
-        )
-          .replace(/\n/g, "<br>")
-          .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")}</div>
+        <div class="text-sm leading-relaxed text-gray-600 whitespace-pre-wrap">${safeText}</div>
       </div>
     `;
   } catch (err) {
@@ -1780,9 +2539,11 @@ async function startSmartReviewQuiz() {
 
     let html = `<h3 class="text-lg font-black mb-6 text-gray-800">🧠 MemorAIze：跨領域戰役</h3>`;
     result.questions.forEach((q, qIdx) => {
+      const safeQuestion = escapeHtml(q.question || "");
+      const safeAnswer = escapeHtml(q.answer);
       html += `
         <div class="mb-8 border-b border-gray-50 pb-6">
-          <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${q.question}</p>
+          <p class="text-sm font-bold mb-4 text-gray-700">${qIdx + 1}. ${safeQuestion}</p>
           <div class="space-y-2">
             ${q.options
               .map(
@@ -1791,8 +2552,8 @@ async function startSmartReviewQuiz() {
                     class="quiz-option"
                     data-action="quiz-answer"
                     data-selected="${oIdx}"
-                    data-correct="${q.answer}"
-                  >${opt}</button>
+                    data-correct="${safeAnswer}"
+                  >${escapeHtml(opt)}</button>
                 `,
               )
               .join("")}
@@ -1862,8 +2623,8 @@ function renderLearningDashboard() {
           (cat) => `
         <div class="group">
           <div class="flex justify-between mb-2">
-            <span class="text-[11px] font-black text-gray-700">${cat.name}</span>
-            <span class="text-[10px] font-black text-orange-500">${cat.score}%</span>
+            <span class="text-[11px] font-black text-gray-700">${escapeHtml(cat.name)}</span>
+            <span class="text-[10px] font-black text-orange-500">${escapeHtml(cat.score)}%</span>
           </div>
           <div class="h-2.5 bg-gray-100 rounded-full overflow-hidden">
             <div class="h-full rounded-full transition-all duration-1000" 
@@ -2323,7 +3084,7 @@ Object.assign(window, {
           feedbackEl.innerHTML = `<span class="text-green-600 font-black">✅ 太棒了！答案完全正確。</span>`;
         } else {
           inputEl.classList.add("border-red-500", "bg-red-50");
-          feedbackEl.innerHTML = `<span class="text-red-600 font-black">❌ 可惜了，正確答案是：${correctAnswer}</span>`;
+          feedbackEl.innerHTML = `<span class="text-red-600 font-black">❌ 可惜了，正確答案是：${escapeHtml(correctAnswer)}</span>`;
         }
         feedbackEl.classList.remove("hidden");
 
@@ -2352,11 +3113,10 @@ Object.assign(window, {
 
       case "clear-quiz-history": {
         if (confirm("確定要將所有測驗紀錄歸零嗎？這不會刪除您的筆記喔！✨")) {
-          quizHistory = [];
-
-          localStorage.removeItem("president_quiz_history");
-
-          renderLearningDashboard();
+          void dataService.clearQuizHistory().then(() => {
+            quizHistory = dataService.getQuizHistory();
+            renderLearningDashboard();
+          });
 
           alert("數據已全數歸零，準備好重新挑戰了嗎？🚀");
         }
@@ -2436,6 +3196,19 @@ Object.assign(window, {
         saveSettingsFromUI();
         break;
 
+      case "auth-signin-google":
+        void signInWithGoogleFlow();
+        break;
+
+      case "auth-signout":
+        void signOutFlow();
+        break;
+
+      case "open-learning-progress":
+        closeModal();
+        window.navigateTo("page-settings");
+        break;
+
       case "export-data": {
         const backup = {
           exportedAt: new Date().toISOString(),
@@ -2466,8 +3239,16 @@ Object.assign(window, {
 
       case "clear-all-data":
         if (confirm("清除？")) {
-          localStorage.clear();
-          location.reload();
+          void (async () => {
+            try {
+              await dataService.clearCloudNotesIfSignedIn();
+            } catch (err) {
+              console.error("[ui] clear cloud notes failed:", err);
+            } finally {
+              await storage.clear();
+              location.reload();
+            }
+          })();
         }
         break;
 
@@ -2537,7 +3318,8 @@ function syncLayoutHeights() {
     root.style.setProperty("--assistant-h", `${assistant.offsetHeight}px`);
 }
 
-window.addEventListener("load", () => {
+window.addEventListener("load", async () => {
+  await initializePersistedState();
   initRecognition();
   updateHomeGreeting();
   renderCategoryFilters();
@@ -2573,3 +3355,9 @@ if (window.visualViewport) {
     adjustTitleFontSize();
   });
 }
+
+window.addEventListener("beforeunload", () => {
+  if (isRecording || getTranscriptText()) {
+    persistTempTranscript(getTranscriptText());
+  }
+});
