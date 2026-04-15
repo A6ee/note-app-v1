@@ -2435,13 +2435,12 @@ function renderQuizUI(result, type, count) {
       html += `
         <div class="flex gap-2">
           <input type="text" id="fib-input-${qIdx}" placeholder="請輸入答案..."
-            class="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-[#13B5B1]">
+            class="flex-1 min-w-0 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-[#13B5B1]">
           <button type="button" data-action="check-fib" data-idx="${qIdx}" data-answer="${safeAnswer}"
-            class="px-4 bg-[#13B5B1] text-white rounded-xl text-xs font-black shadow-md active:scale-95 transition-all">
+            class="flex-shrink-0 px-4 bg-[#13B5B1] text-white rounded-xl text-xs font-black shadow-md active:scale-95 transition-all">
             檢查
           </button>
         </div>
-        <div id="fib-feedback-${qIdx}" class="hidden mt-2 text-[10px] font-black"></div>
       `;
     } else {
       html += (q.options || [])
