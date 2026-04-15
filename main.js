@@ -99,7 +99,11 @@ function parseJsonSafe(raw, fallback) {
   }
 }
 
-async function getStorageValueWithLegacyFallback(key, fallback, parser = (v) => v) {
+async function getStorageValueWithLegacyFallback(
+  key,
+  fallback,
+  parser = (v) => v,
+) {
   const value = await storage.getItem(key);
   if (value !== null && value !== undefined) return value;
 
@@ -475,7 +479,9 @@ let tempSelectedAvatar = appSettings.avatarSeed;
 function mountAuthControlsIfNeeded() {
   if (safeEl("auth-signin-btn") || safeEl("auth-signout-btn")) return;
 
-  const settingsRoot = document.querySelector("#page-settings .settings-scroll .px-6");
+  const settingsRoot = document.querySelector(
+    "#page-settings .settings-scroll .px-6",
+  );
   if (!settingsRoot) return;
 
   const section = document.createElement("section");
@@ -613,9 +619,10 @@ async function initializePersistedState() {
   });
 
   const loadedNotes = await dataService.init(DEFAULT_NOTES_LIBRARY);
-  notesLibrary = Array.isArray(loadedNotes) && loadedNotes.length
-    ? loadedNotes
-    : JSON.parse(JSON.stringify(DEFAULT_NOTES_LIBRARY));
+  notesLibrary =
+    Array.isArray(loadedNotes) && loadedNotes.length
+      ? loadedNotes
+      : JSON.parse(JSON.stringify(DEFAULT_NOTES_LIBRARY));
 
   quizHistory = dataService.getQuizHistory();
   wrongQuestions = dataService.getWrongQuestions();
@@ -629,12 +636,14 @@ async function initializePersistedState() {
     renderTrashList();
   });
 
-  dataService.onLearningChanged(({ quizHistory: nextHistory, wrongQuestions: nextWrong }) => {
-    quizHistory = Array.isArray(nextHistory) ? nextHistory : [];
-    wrongQuestions = Array.isArray(nextWrong) ? nextWrong : [];
-    renderLearningDashboard();
-    renderSRSSection();
-  });
+  dataService.onLearningChanged(
+    ({ quizHistory: nextHistory, wrongQuestions: nextWrong }) => {
+      quizHistory = Array.isArray(nextHistory) ? nextHistory : [];
+      wrongQuestions = Array.isArray(nextWrong) ? nextWrong : [];
+      renderLearningDashboard();
+      renderSRSSection();
+    },
+  );
 
   const loadedSettings = await getStorageValueWithLegacyFallback(
     STORAGE_KEYS.SETTINGS,
@@ -1322,7 +1331,9 @@ function initRecognition() {
     const msg = getRecognitionErrorMessage(code);
     console.error("Recognition error:", code, event);
 
-    if (["not-allowed", "service-not-allowed", "audio-capture"].includes(code)) {
+    if (
+      ["not-allowed", "service-not-allowed", "audio-capture"].includes(code)
+    ) {
       isRecording = false;
       stopNoResultWatchdog();
       clearRecognitionStartTimeout();
@@ -1369,7 +1380,8 @@ function initRecognition() {
     recognitionRestartTimer = setTimeout(() => {
       recognitionEndFailCount += 1;
       markRecoveryRestarting("收音暫時中斷，正在重新連線...");
-      const shouldHardRebuild = recognitionEndFailCount >= HARD_REBUILD_AFTER_FAILS;
+      const shouldHardRebuild =
+        recognitionEndFailCount >= HARD_REBUILD_AFTER_FAILS;
       if (shouldHardRebuild) {
         hardRebuildRecognition();
       }
@@ -1515,10 +1527,14 @@ function buildSegmentsFromTranscript(
   let passedChars = 0;
 
   return merged.map((text, idx) => {
-    const ratioBase = totalChars > 0 ? passedChars / totalChars : idx / Math.max(merged.length - 1, 1);
-    const secondAt = effectiveTotalSeconds > 0
-      ? Math.round(ratioBase * effectiveTotalSeconds)
-      : idx * 8;
+    const ratioBase =
+      totalChars > 0
+        ? passedChars / totalChars
+        : idx / Math.max(merged.length - 1, 1);
+    const secondAt =
+      effectiveTotalSeconds > 0
+        ? Math.round(ratioBase * effectiveTotalSeconds)
+        : idx * 8;
     passedChars += text.length;
     return {
       time: formatSecondsToTimestamp(secondAt),
@@ -1554,7 +1570,10 @@ async function stopRecording() {
 
   const durationText = safeEl("record-timer")?.innerText || "00:00";
   const durationFromUi = parseDurationToSeconds(durationText);
-  const totalRecordedSeconds = Math.max(durationFromUi, Math.floor(seconds || 0));
+  const totalRecordedSeconds = Math.max(
+    durationFromUi,
+    Math.floor(seconds || 0),
+  );
   const finalDurationText = formatSecondsToTimestamp(totalRecordedSeconds);
 
   if (!finalTranscript) {
@@ -1594,7 +1613,11 @@ async function stopRecording() {
 
   let result;
   try {
-    const data = await callGemini(prompt, schema, appSettings.aiStyle || "default");
+    const data = await callGemini(
+      prompt,
+      schema,
+      appSettings.aiStyle || "default",
+    );
     const raw = extractAiText(data);
     result = normalizeAiNotePayload(safeParseAiJson(raw));
   } catch (err) {
@@ -1673,8 +1696,8 @@ async function callGemini(
   aiStyle = "default",
   retryCount = 0,
 ) {
-  const MAX_RETRY = 5;          // 最多重試 5 次（不含首次）
-  const MAX_RETRY_503 = 3;      // 503 服務暫時不可用，最多重試 3 次
+  const MAX_RETRY = 5; // 最多重試 5 次（不含首次）
+  const MAX_RETRY_503 = 3; // 503 服務暫時不可用，最多重試 3 次
   const base = Math.pow(2, retryCount) * 1000;
   const jitter = base * (0.7 + Math.random() * 0.6);
 
@@ -1686,7 +1709,7 @@ async function callGemini(
   };
 
   const shouldRetryStatus = (status, retry) => {
-    if (status === 429) return false;           // 限流中，絕對不重試
+    if (status === 429) return false; // 限流中，絕對不重試
     if (status === 503) return retry < MAX_RETRY_503;
     if (status >= 500) return retry < MAX_RETRY;
     return false;
@@ -1697,8 +1720,9 @@ async function callGemini(
 
   const isQuotaExhaustedError = (status, data) => {
     const remoteMsg = extractRemoteMessage(data, status);
-    return /(quota|配額|resource[_\s-]?exhausted|insufficient[_\s-]?quota|quota[_\s-]?exceeded|billing|exceed.*limit)/i
-      .test(remoteMsg);
+    return /(quota|配額|resource[_\s-]?exhausted|insufficient[_\s-]?quota|quota[_\s-]?exceeded|billing|exceed.*limit)/i.test(
+      remoteMsg,
+    );
   };
 
   const styleToUse = aiStyle || appSettings?.aiStyle || "default";
@@ -1750,7 +1774,7 @@ async function callGemini(
       throw new Error(remoteMsg);
     }
 
-    if (!data) throw new Error("AI 回應格式錯誤，請稍後再試。")
+    if (!data) throw new Error("AI 回應格式錯誤，請稍後再試。");
 
     return data;
   } catch (err) {
@@ -1775,7 +1799,10 @@ function safeParseAiJson(rawText) {
   const raw = String(rawText || "").trim();
   if (!raw) throw new Error("AI 回傳空內容");
 
-  const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+  const cleaned = raw
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
 
   const candidates = [cleaned];
   const firstBrace = cleaned.indexOf("{");
@@ -2051,19 +2078,20 @@ function renderTrashList() {
   } else {
     emptyState.classList.add("hidden");
     container.innerHTML = trashNotes
-      .map(
-        (note) => {
-          const safeTitle = escapeHtml(note.title || "未命名筆記");
-          const safeCategory = escapeHtml(note.category || "未分類");
-          const safeIntro = escapeHtml(note.intro || "已刪除的筆記摘要...");
-          const safeDuration = escapeHtml(note.duration || "00:00");
-          const safeDate = escapeHtml(note.date || "");
-          const safeDeletedAt = escapeHtml(
-            note.deletedAt ? new Date(note.deletedAt).toLocaleDateString() : "未知",
-          );
-          const safeId = escapeHtml(note.id);
+      .map((note) => {
+        const safeTitle = escapeHtml(note.title || "未命名筆記");
+        const safeCategory = escapeHtml(note.category || "未分類");
+        const safeIntro = escapeHtml(note.intro || "已刪除的筆記摘要...");
+        const safeDuration = escapeHtml(note.duration || "00:00");
+        const safeDate = escapeHtml(note.date || "");
+        const safeDeletedAt = escapeHtml(
+          note.deletedAt
+            ? new Date(note.deletedAt).toLocaleDateString()
+            : "未知",
+        );
+        const safeId = escapeHtml(note.id);
 
-          return `
+        return `
         <div class="flex gap-4 items-start mb-6 w-full group opacity-85">
           <div class="card-visual-slot pt-4">
             <div data-action="trash-toggle-note" data-id="${safeId}"
@@ -2099,9 +2127,7 @@ function renderTrashList() {
                 </div>
                 <span class="text-[8px] text-gray-300 font-black tracking-widest uppercase">${safeDate}</span>
                 <div class="text-[8px] text-gray-300 font-black tracking-widest uppercase">
-                  <i class="fas fa-history mr-1"></i> 刪除於: ${
-                    safeDeletedAt
-                  }
+                  <i class="fas fa-history mr-1"></i> 刪除於: ${safeDeletedAt}
                 </div>
               </div>
 
@@ -2128,8 +2154,7 @@ function renderTrashList() {
           </div>
         </div>
       `;
-        },
-      )
+      })
       .join("");
   }
 
@@ -2155,16 +2180,15 @@ function renderReviewSelection() {
   safeEl("clear-date-review")?.classList.toggle("hidden", !currentFilterDate);
 
   noteContainer.innerHTML = availableNotes
-    .map(
-      (note) => {
-        const safeTitle = escapeHtml(note.title || "未命名筆記");
-        const safeCategory = escapeHtml(note.category || "未分類");
-        const safeIntro = escapeHtml(note.intro || "尚無摘要內容...");
-        const safeDuration = escapeHtml(note.duration || "00:00");
-        const safeDate = escapeHtml(note.date || "");
-        const safeId = escapeHtml(note.id);
+    .map((note) => {
+      const safeTitle = escapeHtml(note.title || "未命名筆記");
+      const safeCategory = escapeHtml(note.category || "未分類");
+      const safeIntro = escapeHtml(note.intro || "尚無摘要內容...");
+      const safeDuration = escapeHtml(note.duration || "00:00");
+      const safeDate = escapeHtml(note.date || "");
+      const safeId = escapeHtml(note.id);
 
-        return `
+      return `
         <div class="flex gap-4 items-start mb-6 w-full group">
           <div class="card-visual-slot pt-4">
             <div data-action="review-toggle-note" data-id="${safeId}"
@@ -2214,8 +2238,7 @@ function renderReviewSelection() {
           </div>
         </div>
       `;
-      },
-    )
+    })
     .join("");
 
   const startBtn = safeEl("btn-start-review");

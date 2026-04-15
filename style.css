@@ -150,7 +150,34 @@ img {
   align-items: center;
   justify-content: center;
 }
+.logo-container {
+  width: 56px; /* 調整為適合首頁的大小，原本 w-14 等於 56px */
+  height: 56px;
+  aspect-ratio: 1 / 1;
+  border-radius: 1rem; /* 稍微圓潤的角，呼叫 App 的風格 */
+  overflow: hidden;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
+/* 圖片填充整個正方形 */
+.logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* 關鍵：縮放並填滿，不留白、不變形 */
+  display: block;
+}
+
+/* 3. 確保 Slot 對齊 */
+.left-slot {
+  width: auto; /* 讓寬度根據內容自動調整 */
+  min-width: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
 .header-content-wrapper {
   width: 100%;
   max-width: var(--content-max);
@@ -165,6 +192,7 @@ img {
   min-width: 132px;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
 }
 
 .right-slot {
