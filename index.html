@@ -50,7 +50,7 @@
                   id="home-user-greeting"
                   class="text-base font-black text-gray-800"
                 >
-                  您好
+                  您好 ✨
                 </h1>
               </div>
 
@@ -473,11 +473,10 @@
         >
           <div class="flex gap-4 mb-6">
             <div
-              class="logo-container flex-shrink-0 shadow-lg shadow-[#13B5B1]/10"
+              class="w-10 h-10 bg-[#13B5B1] rounded-2xl flex-shrink-0 flex items-center justify-center text-white text-[11px] font-black shadow-lg shadow-[#13B5B1]/20"
             >
-              <img src="Memo-10.png" alt="Memo助手" class="logo-image" />
+              Memo助手
             </div>
-
             <div
               id="ai-intro-text"
               class="bg-white border border-gray-100 p-4 rounded-2xl rounded-tl-none text-sm text-gray-700 shadow-sm font-medium leading-relaxed"
@@ -513,6 +512,15 @@
                 📚 擴充建議
               </button>
             </div>
+
+            <button
+              id="retry-summary-btn"
+              type="button"
+              data-action="retry-summary"
+              class="hidden w-full py-3 bg-amber-50 border border-amber-300 text-amber-700 rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
+            >
+              重試生成摘要
+            </button>
           </div>
         </div>
 

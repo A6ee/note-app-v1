@@ -27,6 +27,7 @@ let recognition;
 let fullTranscript = "";
 let isRecording = false;
 let isGeneratingSummary = false;
+let isRetryingSummary = false;
 let isRecognitionStarting = false;
 let isStoppingRecognition = false;
 
@@ -1289,10 +1290,11 @@ function initRecognition() {
   };
 
   recognition.onresult = (event) => {
-    lastResultAt = Date.now();
     if (awaitingRecoveryAckToken === 0 && isRecoveryHintVisible) {
       hideRecoveryHint();
     }
+    const prevFullLen = fullTranscript.length;
+    const prevInterim = lastInterim;
     let interim = "";
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       const piece = event.results[i][0]?.transcript || "";
@@ -1316,6 +1318,12 @@ function initRecognition() {
     }
 
     lastInterim = interim;
+    // Only advance watchdog clock when transcript content actually changes.
+    // Chrome fires onresult repeatedly with unchanged interim text when recognition
+    // is stuck, which would falsely reset the watchdog and suppress recovery restart.
+    if (fullTranscript.length > prevFullLen || lastInterim !== prevInterim) {
+      lastResultAt = Date.now();
+    }
     const displayText = getTranscriptText();
     persistTempTranscript(displayText);
 
@@ -1379,7 +1387,14 @@ function initRecognition() {
 
     recognitionRestartTimer = setTimeout(() => {
       recognitionEndFailCount += 1;
-      markRecoveryRestarting("收音暫時中斷，正在重新連線...");
+      // Chrome periodically auto-ends the session even when recognition is healthy
+      // (typically every ~60s). Only surface the recovery hint when transcript was
+      // already stale before onend fired; normal periodic restarts should be silent.
+      // The watchdog is the primary path for showing hints during active stalls.
+      const transcriptIsStale = Date.now() - lastResultAt > RESTART_GRACE_MS;
+      if (transcriptIsStale) {
+        markRecoveryRestarting("收音暫時中斷，正在重新連線...");
+      }
       const shouldHardRebuild =
         recognitionEndFailCount >= HARD_REBUILD_AFTER_FAILS;
       if (shouldHardRebuild) {
@@ -1585,7 +1600,7 @@ async function stopRecording() {
 
   window.navigateTo("page-loading");
 
-  const prompt = `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。請只根據提供內容整理，不要補充逐字稿中不存在的內容。逐字稿：${finalTranscript}`;
+  const prompt = buildSummaryPromptFromTranscript(finalTranscript);
 
   const speechSegments = buildSegmentsFromTranscript(
     finalTranscript,
@@ -1620,6 +1635,14 @@ async function stopRecording() {
     );
     const raw = extractAiText(data);
     result = normalizeAiNotePayload(safeParseAiJson(raw));
+    // Treat an empty sections array as a generation failure.
+    // Gemini occasionally returns a valid JSON skeleton with no actual content
+    // (e.g. sections:[]) when it cannot process the transcript; without this
+    // guard the note would be saved silently with no summary and no alert.
+    if (!result.sections || result.sections.length === 0) {
+      console.warn("AI 回應 sections 為空，視為摘要失敗，導向 fallback。");
+      throw new Error("AI 未能生成有效筆記內容（sections 為空），可能是逐字稿太短，請再試一次。");
+    }
   } catch (err) {
     // Only enter fallback after callGemini built-in retries are exhausted.
     console.error("摘要生成最終失敗:", err);
@@ -1639,6 +1662,8 @@ async function stopRecording() {
         sections: [],
         segments: fallbackSegments,
         rawTranscript: finalTranscript,
+        summaryStatus: "pending",
+        summaryRetryCount: 0,
         isFavorite: false,
         isDeleted: false,
       };
@@ -1667,6 +1692,8 @@ async function stopRecording() {
       duration: finalDurationText,
       segments: speechSegments,
       rawTranscript: finalTranscript,
+      summaryStatus: "ready",
+      summaryRetryCount: 0,
       isFavorite: false,
       isDeleted: false,
     };
@@ -1849,6 +1876,27 @@ function normalizeAiNotePayload(payload) {
   };
 }
 
+function isTranscriptOnlyNote(note) {
+  if (!note) return false;
+  const hasTranscript = String(note.rawTranscript || "").trim().length > 0;
+  const hasSections = Array.isArray(note.sections) && note.sections.length > 0;
+  return hasTranscript && !hasSections;
+}
+
+function setRetrySummaryButtonVisible(note) {
+  const btn = safeEl("retry-summary-btn");
+  if (!btn) return;
+
+  const shouldShow = isTranscriptOnlyNote(note);
+  btn.classList.toggle("hidden", !shouldShow);
+  btn.disabled = isRetryingSummary;
+  btn.style.opacity = isRetryingSummary ? "0.6" : "1";
+}
+
+function buildSummaryPromptFromTranscript(transcript) {
+  return `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。請只根據提供內容整理，不要補充逐字稿中不存在的內容。逐字稿：${transcript}`;
+}
+
 /**
  * =========================================================
  * 5) Render / UI（渲染與介面）
@@ -1944,6 +1992,8 @@ function renderNoteUI(data) {
       transcriptContainer.appendChild(item);
     });
   }
+
+  setRetrySummaryButtonVisible(data);
 }
 
 function noteMatchesFilters(note, searchTermLower = "") {
@@ -2323,6 +2373,97 @@ function editNoteTitle() {
   safeEl("content-title").innerText = v;
   adjustTitleFontSize();
   renderNotesList();
+}
+
+async function retryGenerateSummaryForCurrentNote() {
+  if (!currentNoteData || isRetryingSummary) return;
+
+  const noteId = currentNoteData.id;
+  const note = notesLibrary.find((n) => n.id === noteId) || currentNoteData;
+  if (!isTranscriptOnlyNote(note)) return;
+
+  const transcript = String(note.rawTranscript || "").trim();
+  if (!transcript) {
+    alert("這份筆記沒有可用逐字稿，無法重試摘要。");
+    return;
+  }
+
+  const retryBtn = safeEl("retry-summary-btn");
+  const prevText = retryBtn?.innerText || "";
+
+  isRetryingSummary = true;
+  if (retryBtn) retryBtn.innerText = "摘要重試中...";
+  setRetrySummaryButtonVisible(note);
+
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      title: { type: "STRING" },
+      intro: { type: "STRING" },
+      sections: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            category: { type: "STRING" },
+            items: { type: "ARRAY", items: { type: "STRING" } },
+          },
+        },
+      },
+    },
+  };
+
+  try {
+    const prompt = buildSummaryPromptFromTranscript(transcript);
+    const data = await callGemini(prompt, schema, appSettings.aiStyle || "default");
+    const raw = extractAiText(data);
+    const normalized = normalizeAiNotePayload(safeParseAiJson(raw));
+
+    const updated = {
+      ...note,
+      title: normalized.title || note.title || "新筆記",
+      intro: normalized.intro || "尚無摘要",
+      sections: Array.isArray(normalized.sections) ? normalized.sections : [],
+      summaryStatus: "ready",
+      summaryRetryCount: Number(note.summaryRetryCount || 0) + 1,
+    };
+
+    const nextNotes = await dataService.updateNote(updated);
+    notesLibrary = Array.isArray(nextNotes) ? nextNotes : notesLibrary;
+    currentNoteData = notesLibrary.find((n) => n.id === updated.id) || updated;
+
+    renderNoteUI(currentNoteData);
+    renderNotesList();
+    renderReviewSelection();
+    renderTrashList();
+    alert("摘要已成功補生成。");
+  } catch (err) {
+    console.error("重試摘要失敗:", err);
+
+    const failedUpdated = {
+      ...note,
+      summaryStatus: "pending",
+      summaryRetryCount: Number(note.summaryRetryCount || 0) + 1,
+    };
+
+    try {
+      const nextNotes = await dataService.updateNote(failedUpdated);
+      notesLibrary = Array.isArray(nextNotes) ? nextNotes : notesLibrary;
+      currentNoteData = notesLibrary.find((n) => n.id === failedUpdated.id) || failedUpdated;
+      renderNoteUI(currentNoteData);
+      renderNotesList();
+      renderReviewSelection();
+      renderTrashList();
+    } catch (persistErr) {
+      console.error("更新重試狀態失敗:", persistErr);
+    }
+
+    alert(`重試仍失敗，已保留逐字稿。\n原因：${err?.message || "未知錯誤"}`);
+  } finally {
+    isRetryingSummary = false;
+    if (retryBtn) retryBtn.innerText = prevText || "重試生成摘要";
+    setRetrySummaryButtonVisible(currentNoteData);
+  }
 }
 
 function showModal(text) {
@@ -3601,6 +3742,10 @@ Object.assign(window, {
 
       case "expand":
         call(expandContent);
+        break;
+
+      case "retry-summary":
+        void retryGenerateSummaryForCurrentNote();
         break;
 
       case "export-pdf":

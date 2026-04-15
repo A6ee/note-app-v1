@@ -31,12 +31,14 @@ class AuthService {
     return { code, message, raw: err };
   }
 
-  shouldFallbackToRedirect(errorCode) {
+  shouldFallbackToRedirect(errorCode, options = {}) {
+    const allowPopupClosedFallback = options.allowPopupClosedFallback !== false;
     return [
       "auth/popup-blocked",
       "auth/cancelled-popup-request",
       "auth/operation-not-supported-in-this-environment",
       "auth/unauthorized-domain",
+      ...(allowPopupClosedFallback ? ["auth/popup-closed-by-user"] : []),
     ].includes(errorCode);
   }
 
@@ -113,14 +115,14 @@ class AuthService {
     } catch (err) {
       const { code, message, raw } = this.normalizeFirebaseError(err);
 
-      if (code === "auth/popup-closed-by-user") {
-        throw new Error("您已關閉登入視窗，請再試一次。");
-      }
-
       if (this.shouldFallbackToRedirect(code)) {
         console.warn(`[auth] popup failed (${code || "unknown"}), fallback to redirect.`);
         await signInWithRedirect(auth, googleProvider);
         return null;
+      }
+
+      if (code === "auth/popup-closed-by-user") {
+        throw new Error("您已關閉登入視窗，請再試一次。");
       }
 
       throw new Error(message || String(raw || "Google 登入失敗"));
