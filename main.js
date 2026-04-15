@@ -930,6 +930,14 @@ async function startVoiceActivityMonitor() {
     return;
   }
 
+  // 行動端 Web Speech API 已佔用麥克風，避免 VAD 再開第二條音訊流。
+  // 部分手機瀏覽器與 PWA 無法穩定同時持有兩條 getUserMedia 流，會導致偶發斷流或權限互斥。
+  // vadReady = false 時 isLikelySpeakingNow() 回傳 true，watchdog 維持既有安全 fallback 行為。
+  if (isLikelyMobileDevice()) {
+    vadReady = false;
+    return;
+  }
+
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
@@ -1289,7 +1297,7 @@ function initRecognition() {
           anchorSecond,
         );
         pendingSpeechAnchorSecond = null;
-        console.log("finalizedSpeechTimeline seconds:", finalizedSpeechTimeline.map((item, index) => ({ index, second: item.second })));
+        //console.log("finalizedSpeechTimeline seconds:", finalizedSpeechTimeline.map((item, index) => ({ index, second: item.second })));
       } else {
         interim += piece;
         if (piece.trim() && pendingSpeechAnchorSecond === null) {
