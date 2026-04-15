@@ -2390,10 +2390,13 @@ async function retryGenerateSummaryForCurrentNote() {
 
   const retryBtn = safeEl("retry-summary-btn");
   const prevText = retryBtn?.innerText || "";
+  const isRateLimitMessage = (msg) => /請求過於頻繁|too many requests|429/i.test(String(msg || ""));
 
   isRetryingSummary = true;
   if (retryBtn) retryBtn.innerText = "摘要重試中...";
   setRetrySummaryButtonVisible(note);
+  showModal("✨ Memo助手正在重新生成摘要...");
+  let retryFeedbackMessage = "";
 
   const schema = {
     type: "OBJECT",
@@ -2419,11 +2422,15 @@ async function retryGenerateSummaryForCurrentNote() {
     const raw = extractAiText(data);
     const normalized = normalizeAiNotePayload(safeParseAiJson(raw));
 
+    if (!normalized.sections || normalized.sections.length === 0) {
+      throw new Error("AI 未能生成有效筆記內容（sections 為空），可能是逐字稿太短，請再試一次。");
+    }
+
     const updated = {
       ...note,
       title: normalized.title || note.title || "新筆記",
       intro: normalized.intro || "尚無摘要",
-      sections: Array.isArray(normalized.sections) ? normalized.sections : [],
+      sections: normalized.sections,
       summaryStatus: "ready",
       summaryRetryCount: Number(note.summaryRetryCount || 0) + 1,
     };
@@ -2436,7 +2443,7 @@ async function retryGenerateSummaryForCurrentNote() {
     renderNotesList();
     renderReviewSelection();
     renderTrashList();
-    alert("摘要已成功補生成。");
+    retryFeedbackMessage = "摘要已成功補生成。";
   } catch (err) {
     console.error("重試摘要失敗:", err);
 
@@ -2458,11 +2465,15 @@ async function retryGenerateSummaryForCurrentNote() {
       console.error("更新重試狀態失敗:", persistErr);
     }
 
-    alert(`重試仍失敗，已保留逐字稿。\n原因：${err?.message || "未知錯誤"}`);
+    if (!isRateLimitMessage(err?.message)) {
+      retryFeedbackMessage = `重試仍失敗，已保留逐字稿。\n原因：${err?.message || "未知錯誤"}`;
+    }
   } finally {
     isRetryingSummary = false;
+    closeModal();
     if (retryBtn) retryBtn.innerText = prevText || "重試生成摘要";
     setRetrySummaryButtonVisible(currentNoteData);
+    if (retryFeedbackMessage) alert(retryFeedbackMessage);
   }
 }
 
