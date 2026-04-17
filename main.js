@@ -599,7 +599,7 @@ function showSafariRecordingHintIfNeeded() {
   try {
     window.sessionStorage?.setItem(SAFARI_RECORDING_HINT_SESSION_KEY, "1");
   } catch {
-    // Ignore sessionStorage failures and still show the hint once for this load.
+    // Ignore sessionStorage failures and still show the hint for this load.
   }
 
   alert("目前 Safari 對即時模式的支援較不穩定，建議您優先使用高品質模式，以獲得較好的錄音與整理效果。感謝您的理解！");
