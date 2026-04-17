@@ -103,6 +103,8 @@ const STORAGE_KEYS = {
   TEMP_TRANSCRIPT: TEMP_TRANSCRIPT_KEY,
 };
 
+const SAFARI_RECORDING_HINT_SESSION_KEY = "safari_recording_hint_shown";
+
 const storage = localforage.createInstance({
   name: "MemorAIze",
   storeName: "app_state",
@@ -561,9 +563,46 @@ function isLikelyMobileDevice() {
   return /android|iphone|ipad|ipod|mobile/i.test(ua);
 }
 
+function isAppleDevice() {
+  const ua = String(window.navigator?.userAgent || "").toLowerCase();
+  const platform = String(window.navigator?.platform || "").toLowerCase();
+  const touchPoints = Number(window.navigator?.maxTouchPoints || 0);
+  return /iphone|ipad|ipod|macintosh|mac os x/i.test(ua)
+    || /mac/i.test(platform)
+    || (platform === "macintel" && touchPoints > 1);
+}
+
+function isSafariBrowser() {
+  const ua = String(window.navigator?.userAgent || "");
+  const isSafariEngine = /Safari\//.test(ua);
+  const isOtherBrowser = /(Chrome|Chromium|CriOS|FxiOS|Firefox|Edg|EdgiOS|OPR|Opera|SamsungBrowser)/.test(ua);
+  return isSafariEngine && !isOtherBrowser;
+}
+
 function isInAppWebView() {
   const ua = String(window.navigator?.userAgent || "").toLowerCase();
   return /(line|fbav|fban|instagram|micromessenger|wv)/i.test(ua);
+}
+
+function shouldShowSafariRecordingHint() {
+  if (!isAppleDevice() || !isSafariBrowser()) return false;
+  try {
+    return window.sessionStorage?.getItem(SAFARI_RECORDING_HINT_SESSION_KEY) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+function showSafariRecordingHintIfNeeded() {
+  if (!shouldShowSafariRecordingHint()) return;
+
+  try {
+    window.sessionStorage?.setItem(SAFARI_RECORDING_HINT_SESSION_KEY, "1");
+  } catch {
+    // Ignore sessionStorage failures and still show the hint once for this load.
+  }
+
+  alert("目前 Safari 對即時模式的支援較不穩定，建議您優先使用高品質模式，以獲得較好的錄音與整理效果。感謝您的理解！");
 }
 
 function shouldPreferRedirectAuth() {
@@ -4454,6 +4493,7 @@ window.addEventListener("load", async () => {
   updateHomeGreeting();
   renderCategoryFilters();
   window.navigateTo("page-home");
+  showSafariRecordingHintIfNeeded();
   syncLayoutHeights();
   requestAnimationFrame(syncLayoutHeights);
   setTimeout(syncLayoutHeights, 200);
