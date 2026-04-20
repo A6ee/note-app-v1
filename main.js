@@ -1690,7 +1690,8 @@ function initRecognition() {
   };
 }
 
-function startRecordPage() {
+
+async function startRecordPage() {
   if (isRecording || isGeneratingSummary) return;
 
   if (recordingMode === "hq") {
@@ -1737,6 +1738,19 @@ function startRecordPage() {
     return;
   }
 
+  // --- 新增：錄音前權限檢查 ---
+  if (!navigator.mediaDevices?.getUserMedia) {
+    alert("目前瀏覽器不支援錄音裝置存取（getUserMedia）。");
+    return;
+  }
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch (err) {
+    alert("麥克風權限被拒絕，請允許麥克風存取後再試一次。");
+    return;
+  }
+
+  // 權限確認後才正式啟動錄音流程
   initRecognition();
 
   fullTranscript = "";
