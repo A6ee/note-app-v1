@@ -3258,9 +3258,14 @@ function checkAnswer(btn, selected, correct) {
   const corrIdx = Number(correct);
   const isCorrect = Number(selected) === corrIdx;
 
+  // 取得本題的 sourceCategory，若無則 fallback
+  let qIdx = Array.from(btn.closest('.mb-8').parentNode.children).indexOf(btn.closest('.mb-8'));
+  let sourceCategory = (currentQuizQuestions?.[qIdx]?.sourceCategory)
+    || currentNoteData?.category
+    || "綜合複習";
   saveQuizRecord({
     noteId: currentNoteData?.id || "smart-review",
-    category: currentNoteData?.category || "綜合複習",
+    category: sourceCategory,
     type: selectedQuizType,
     isCorrect: isCorrect,
   });
@@ -3358,6 +3363,9 @@ function showQuizResult() {
 
 let selectedQuizCount = 3;
 let selectedQuizType = "mc";
+
+// 新增：存放本次 quiz 題目及其 sourceCategory
+let currentQuizQuestions = [];
 
 /**
  * 開啟測驗自定義設定選單
@@ -3470,9 +3478,10 @@ async function generateCustomQuiz(count, type, isReviewMode = false) {
   let contentData = "";
   let loadingMsg = "";
   currentSessionScore = { correct: 0, total: 0 };
+  currentQuizQuestions = [];
   // 1. 決定資料來源
+  let quizCategories;
   if (isReviewMode) {
-    // 智能複習模式：整合所有選取的筆記內容
     const notesToReview = notesLibrary.filter((n) =>
       selectedReviewNotes.has(n.id),
     );
@@ -3483,39 +3492,40 @@ async function generateCustomQuiz(count, type, isReviewMode = false) {
     contentData = notesToReview
       .map(
         (n) =>
-          `標題: ${n.title}\n內容摘要: ${n.intro}\n詳細重點: ${JSON.stringify(n.sections)}`,
+          `標題: ${n.title}\n分類: ${n.category}\n內容摘要: ${n.intro}\n詳細重點: ${JSON.stringify(n.sections)}`,
       )
       .join("\n\n---\n\n");
     loadingMsg = `✨ Memo助手正在整合 ${notesToReview.length} 份筆記，產出 ${count} 題跨領域挑戰...`;
+    quizCategories = [...new Set(notesToReview.map(n => n.category).filter(Boolean))];
   } else {
-    // 單篇筆記模式
     if (!currentNoteData) return;
-    contentData = `標題: ${currentNoteData.title}\n內容: ${JSON.stringify(currentNoteData.sections)}`;
+    contentData = `標題: ${currentNoteData.title}\n分類: ${currentNoteData.category}\n內容: ${JSON.stringify(currentNoteData.sections)}`;
     loadingMsg = `✨ Memo助手正在針對本篇筆記，精選 ${count} 題考題...`;
+    quizCategories = [currentNoteData.category].filter(Boolean);
   }
 
   showModal(loadingMsg);
 
-  // 2. 根據題型設定 AI 指令
+  // 2. 題型指令
   let typeInstruction = "";
   if (type === "mc") {
-    typeInstruction =
-      "4個選項的單選題。請提供 options 陣列，answer 為正確選項的索引 (0-3)。";
+    typeInstruction = "4個選項的單選題。請提供 options 陣列，answer 為正確選項的索引 (0-3)。";
   } else if (type === "tf") {
-    typeInstruction =
-      "是非題。options 必須固定為 ['O', 'X']，answer 為正確答案的索引 (0代表O，1代表X)。";
+    typeInstruction = "是非題。options 必須固定為 ['O', 'X']，answer 為正確答案的索引 (0代表O，1代表X)。";
   } else if (type === "fib") {
-    typeInstruction =
-      "填空挑戰題。題目中請用 ___ 表示填空處。不要提供 options 陣列 (留空 [])，answer 必須直接填入該填空的正確繁體中文字串。";
+    typeInstruction = "填空挑戰題。題目中請用 ___ 表示填空處。不要提供 options 陣列 (留空 [])，answer 必須直接填入該填空的正確繁體中文字串。";
   }
 
-  // 3. 建立 Prompt 與 Schema
+  // 3. 建立 Prompt 與 Schema，要求每題回傳 sourceCategory
   const prompt = `你是一位專業教授「MemorAIze」。請根據以下提供的學習內容，出一份高品質的測驗。
 題數：${count} 題
 題型要求：${typeInstruction}
 
+【重要】每題必須回傳 sourceCategory，且只能從本次選入的分類中擇一：${quizCategories.join("、")}
+若是單篇筆記模式，也要回該筆記分類。
+
 請嚴格遵守 JSON 格式回傳，不要包含 \`\`\`json 等標籤：
-{"questions": [{"question": "題目內容", "options": ["選項1","選項2"...], "answer": "索引或字串"}]}
+{"questions": [{"question": "題目內容", "options": ["選項1","選項2"...], "answer": "索引或字串", "sourceCategory": "分類名稱"}]}
 
 學習內容如下：
 ${contentData}`;
@@ -3532,7 +3542,8 @@ ${contentData}`;
           properties: {
             question: { type: "STRING" },
             options: { type: "ARRAY", items: { type: "STRING" } },
-            answer: { type: "STRING" }, // 統一用字串接收，後面再轉型判定
+            answer: { type: "STRING" },
+            sourceCategory: { type: "STRING" },
           },
           required: ["question", "answer"],
         },
@@ -3542,7 +3553,6 @@ ${contentData}`;
   };
 
   try {
-    // 4. 呼叫 Gemini API
     const data = await callGemini(prompt, schema);
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     const cleanJson = String(rawText)
@@ -3551,7 +3561,9 @@ ${contentData}`;
       .trim();
     const result = JSON.parse(cleanJson);
 
-    // 5. 呼叫渲染函數顯示結果 (這個函數我們接下來會實作)
+    // 存下本次 quiz 題目及其 sourceCategory
+    currentQuizQuestions = Array.isArray(result.questions) ? result.questions : [];
+
     renderQuizUI(result, type, count);
   } catch (err) {
     console.error("出題失敗：", err);
@@ -4266,9 +4278,12 @@ Object.assign(window, {
         }
         feedbackEl.classList.remove("hidden");
 
+        let sourceCategory = (currentQuizQuestions?.[parseInt(idx)]?.sourceCategory)
+          || currentNoteData?.category
+          || "綜合複習";
         saveQuizRecord({
           noteId: currentNoteData?.id || "smart-review",
-          category: currentNoteData?.category || "綜合複習",
+          category: sourceCategory,
           type: "fib",
           isCorrect: isCorrect,
         });
