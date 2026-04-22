@@ -3254,11 +3254,25 @@ function permanentClearAll() {
  * Quiz / Expand / Export
  */
 function checkAnswer(btn, selected, correct) {
+
+  // 取得所有選項按鈕
   const allBtns = btn.parentElement.querySelectorAll("button");
-  const corrIdx = Number(correct);
+  // 取得所有選項文字
+  const options = Array.from(allBtns).map((b) => b.innerText.trim());
+
+  // 修正：確保 correct 一律為 index
+  let corrIdx = correct;
+  if (typeof corrIdx === "string") {
+    // 嘗試將字串答案轉為 index
+    const idx = options.findIndex(opt => opt === corrIdx.trim());
+    corrIdx = idx !== -1 ? idx : Number(correct); // fallback: 若找不到則嘗試轉數字
+  } else {
+    corrIdx = Number(correct);
+  }
   const isCorrect = Number(selected) === corrIdx;
 
   // 取得本題的 sourceCategory，若無則 fallback
+
   let qIdx = Array.from(btn.closest('.mb-8').parentNode.children).indexOf(btn.closest('.mb-8'));
   let sourceCategory = (currentQuizQuestions?.[qIdx]?.sourceCategory)
     || currentNoteData?.category
@@ -3270,6 +3284,7 @@ function checkAnswer(btn, selected, correct) {
     isCorrect: isCorrect,
   });
 
+
   currentSessionScore.total++;
   if (isCorrect) currentSessionScore.correct++;
 
@@ -3278,22 +3293,20 @@ function checkAnswer(btn, selected, correct) {
     .querySelector("p")
     .innerText.replace(/^\d+\.\s/, "");
 
+
   if (isCorrect) {
     promoteWrongQuestion(questionText);
   } else {
-    const options = Array.from(
-      questionContainer.querySelectorAll("button.quiz-option"),
-    ).map((b) => b.innerText);
-
     addToWrongQuestions(
       {
         question: questionText,
         options: options,
-        answer: correct,
+        answer: corrIdx,
       },
       selectedQuizType,
     );
   }
+
 
   if (isCorrect) {
     btn.classList.add("quiz-correct");
