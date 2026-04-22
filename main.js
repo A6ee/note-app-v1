@@ -1521,6 +1521,10 @@ function noteMatchesFilters(note, searchTermLower = "") {
 function renderNotesList() {
   const container = safeEl("list-container");
   const searchTerm = safeEl("search-input")?.value.toLowerCase() || "";
+
+  const clearBtn = safeEl("clear-date-list");
+  if (clearBtn) clearBtn.classList.toggle("hidden", !currentFilterDate);
+
   if (!container) return;
 
   const filteredNotes = notesLibrary.filter(

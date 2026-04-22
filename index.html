@@ -199,7 +199,6 @@
                 id="search-input"
                 placeholder="搜尋筆記紀錄..."
                 class="bg-transparent border-none outline-none px-2 py-2 text-xs w-full font-bold text-gray-600"
-                aria-label="搜尋筆記紀錄"
               />
             </label>
           </div>
@@ -207,12 +206,12 @@
           <div
             class="rwd-content-wrapper px-6 py-2 border-b border-gray-50 flex items-center justify-between bg-white/95 backdrop-blur-sm"
           >
-            <div class="flex gap-4" role="tablist" aria-label="筆記篩選">
+            <div class="flex gap-4" role="tablist">
               <button
                 type="button"
                 data-filter="all"
                 id="filter-all"
-                class="text-xs font-black text-[#13B5B1] cursor-pointer border-b-2 border-[#13B5B1] pb-1"
+                class="text-xs font-black text-[#13B5B1] border-b-2 border-[#13B5B1] pb-1"
               >
                 全部
               </button>
@@ -220,23 +219,34 @@
                 type="button"
                 data-filter="fav"
                 id="filter-fav"
-                class="text-xs font-black text-gray-300 cursor-pointer pb-1"
+                class="text-xs font-black text-gray-300 pb-1"
               >
                 ★ 收藏
               </button>
             </div>
 
-            <div class="flex items-center gap-3">
-              <div class="relative flex items-center justify-center w-8 h-8">
-                <i
-                  class="fas fa-calendar-day text-gray-300 text-sm absolute"
-                ></i>
-                <input
-                  type="date"
-                  id="date-filter"
-                  class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  onchange="window.filterByDate(this.value)"
-                />
+            <div class="flex items-center gap-2">
+              <div
+                class="flex items-center bg-gray-50 px-2 py-1.5 rounded-xl gap-2 shadow-sm border border-gray-100"
+              >
+                <div class="relative flex items-center justify-center w-5 h-5">
+                  <i
+                    class="fas fa-calendar-day text-gray-300 text-xs absolute pointer-events-none"
+                  ></i>
+                  <input
+                    type="date"
+                    id="date-filter"
+                    class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  />
+                </div>
+                <button
+                  type="button"
+                  id="clear-date-list"
+                  data-action="clear-date"
+                  class="hidden text-[10px] font-black text-red-400"
+                >
+                  重置
+                </button>
               </div>
               <div id="category-filter-container"></div>
             </div>
@@ -559,15 +569,7 @@
             <div class="center-slot">
               <h2 class="text-base font-black text-gray-800">回收站</h2>
             </div>
-            <div class="right-slot">
-              <button
-                data-action="trash-clear-all"
-                type="button"
-                class="text-[10px] font-black text-red-400 bg-red-50 px-3 py-2 rounded-xl active:scale-95 transition-all"
-              >
-                清空全部
-              </button>
-            </div>
+            <div class="right-slot"></div>
           </div>
         </header>
 
@@ -615,15 +617,28 @@
               >
                 一鍵全選
               </button>
-              <div class="relative flex items-center justify-center w-8 h-8">
-                <i
-                  class="fas fa-calendar-day text-gray-300 text-sm absolute"
-                ></i>
+              <button
+                type="button"
+                data-action="trash-clear-all"
+                class="text-[10px] font-black text-red-400 bg-red-50 px-3 py-1.5 rounded-xl active:scale-95 transition-all"
+              >
+                清空全部
+              </button>
+              <div class="relative flex items-center">
+                <button
+                  type="button"
+                  data-action="open-date-picker-trash"
+                  class="text-gray-300 text-sm hover:text-[#13B5B1] transition-colors"
+                  aria-label="開啟回收站日期篩選"
+                >
+                  <i class="fas fa-calendar-day"></i>
+                </button>
                 <input
                   type="date"
-                  id="date-filter"
-                  class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  onchange="window.filterByDate(this.value)"
+                  id="date-filter-trash"
+                  class="absolute opacity-0 w-0 h-0 pointer-events-none"
+                  tabindex="-1"
+                  aria-hidden="true"
                 />
               </div>
               <div id="category-filter-trash"></div>
@@ -738,15 +753,21 @@
               >
                 一鍵全選
               </button>
-              <div class="relative flex items-center justify-center w-8 h-8">
-                <i
-                  class="fas fa-calendar-day text-gray-300 text-sm absolute"
-                ></i>
+              <div class="relative flex items-center">
+                <button
+                  type="button"
+                  data-action="open-date-picker-review"
+                  class="text-gray-300 text-sm hover:text-[#13B5B1] transition-colors"
+                  aria-label="開啟複習日期篩選"
+                >
+                  <i class="fas fa-calendar-day"></i>
+                </button>
                 <input
                   type="date"
-                  id="date-filter"
-                  class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  onchange="window.filterByDate(this.value)"
+                  id="date-filter-review"
+                  class="absolute opacity-0 w-0 h-0 pointer-events-none"
+                  tabindex="-1"
+                  aria-hidden="true"
                 />
               </div>
               <div id="category-filter-review"></div>
