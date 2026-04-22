@@ -227,21 +227,15 @@
             </div>
 
             <div class="flex items-center gap-3">
-              <div class="relative flex items-center">
-                <button
-                  type="button"
-                  data-action="open-date-picker"
-                  class="text-gray-300 text-sm hover:text-[#13B5B1] transition-colors"
-                  aria-label="開啟日期篩選"
-                >
-                  <i class="fas fa-calendar-day"></i>
-                </button>
+              <div class="relative flex items-center justify-center w-8 h-8">
+                <i
+                  class="fas fa-calendar-day text-gray-300 text-sm absolute"
+                ></i>
                 <input
                   type="date"
                   id="date-filter"
-                  class="absolute opacity-0 w-0 h-0 pointer-events-none"
-                  tabindex="-1"
-                  aria-hidden="true"
+                  class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  onchange="window.filterByDate(this.value)"
                 />
               </div>
               <div id="category-filter-container"></div>
@@ -621,21 +615,15 @@
               >
                 一鍵全選
               </button>
-              <div class="relative flex items-center">
-                <button
-                  type="button"
-                  data-action="open-date-picker-trash"
-                  class="text-gray-300 text-sm hover:text-[#13B5B1] transition-colors"
-                  aria-label="開啟回收站日期篩選"
-                >
-                  <i class="fas fa-calendar-day"></i>
-                </button>
+              <div class="relative flex items-center justify-center w-8 h-8">
+                <i
+                  class="fas fa-calendar-day text-gray-300 text-sm absolute"
+                ></i>
                 <input
                   type="date"
-                  id="date-filter-trash"
-                  class="absolute opacity-0 w-0 h-0 pointer-events-none"
-                  tabindex="-1"
-                  aria-hidden="true"
+                  id="date-filter"
+                  class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  onchange="window.filterByDate(this.value)"
                 />
               </div>
               <div id="category-filter-trash"></div>
@@ -750,21 +738,15 @@
               >
                 一鍵全選
               </button>
-              <div class="relative flex items-center">
-                <button
-                  type="button"
-                  data-action="open-date-picker-review"
-                  class="text-gray-300 text-sm hover:text-[#13B5B1] transition-colors"
-                  aria-label="開啟複習日期篩選"
-                >
-                  <i class="fas fa-calendar-day"></i>
-                </button>
+              <div class="relative flex items-center justify-center w-8 h-8">
+                <i
+                  class="fas fa-calendar-day text-gray-300 text-sm absolute"
+                ></i>
                 <input
                   type="date"
-                  id="date-filter-review"
-                  class="absolute opacity-0 w-0 h-0 pointer-events-none"
-                  tabindex="-1"
-                  aria-hidden="true"
+                  id="date-filter"
+                  class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  onchange="window.filterByDate(this.value)"
                 />
               </div>
               <div id="category-filter-review"></div>
