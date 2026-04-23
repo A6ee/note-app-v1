@@ -59,17 +59,20 @@ class DataService {
     const localQuizHistory = await storageService.getQuizHistory([]);
     const localWrongQuestions = await storageService.getWrongQuestions([]);
 
-    this.notesCache = Array.isArray(localNotes) && localNotes.length
-      ? localNotes
-      : fallback;
+    this.notesCache =
+      Array.isArray(localNotes) && localNotes.length ? localNotes : fallback;
     this.quizHistoryCache = this.normalizeQuizHistory(localQuizHistory);
-    this.wrongQuestionsCache = this.normalizeWrongQuestions(localWrongQuestions);
+    this.wrongQuestionsCache =
+      this.normalizeWrongQuestions(localWrongQuestions);
     this.isReady = true;
     this.emitNotesChanged();
     this.emitLearningChanged();
 
     authService.onChange(async (user) => {
-      console.info("[dataService] auth changed, user:", user?.uid || "anonymous");
+      console.info(
+        "[dataService] auth changed, user:",
+        user?.uid || "anonymous",
+      );
       if (user?.uid) {
         await this.syncNotesIfNeeded();
         await this.syncLearningIfNeeded();
@@ -124,8 +127,14 @@ class DataService {
     return authService.getCurrentUser();
   }
 
-  async signInWithGoogle() {
-    const user = await authService.signInWithGoogle();
+  onAuthChanged(callback) {
+    return authService.onChange(callback);
+  }
+
+  async signInWithGoogle(options = {}) {
+    const user = await authService.signInWithGoogle(options);
+    if (!user?.uid) return user;
+
     await this.syncNotesIfNeeded();
     await this.syncLearningIfNeeded();
     return user;
@@ -194,7 +203,9 @@ class DataService {
 
   async persistQuizHistory(nextQuizHistory) {
     const normalized = this.normalizeQuizHistory(nextQuizHistory);
-    const prevMap = new Map((this.quizHistoryCache || []).map((q) => [q.id, q]));
+    const prevMap = new Map(
+      (this.quizHistoryCache || []).map((q) => [q.id, q]),
+    );
 
     this.quizHistoryCache = cloneDeep(normalized);
     await storageService.saveQuizHistory(this.quizHistoryCache);
@@ -239,7 +250,9 @@ class DataService {
 
   async persistWrongQuestions(nextWrongQuestions) {
     const normalized = this.normalizeWrongQuestions(nextWrongQuestions);
-    const prevMap = new Map((this.wrongQuestionsCache || []).map((q) => [q.id, q]));
+    const prevMap = new Map(
+      (this.wrongQuestionsCache || []).map((q) => [q.id, q]),
+    );
 
     this.wrongQuestionsCache = cloneDeep(normalized);
     await storageService.saveWrongQuestions(this.wrongQuestionsCache);
@@ -345,7 +358,9 @@ class DataService {
   async deleteNote(noteId) {
     const now = Date.now();
     const next = this.notesCache.map((n) =>
-      n.id === noteId ? { ...n, isDeleted: true, deletedAt: now, updatedAt: now } : n,
+      n.id === noteId
+        ? { ...n, isDeleted: true, deletedAt: now, updatedAt: now }
+        : n,
     );
     return this.persistNotesSnapshot(next);
   }
@@ -422,7 +437,8 @@ class DataService {
       );
 
       this.quizHistoryCache = this.normalizeQuizHistory(mergedQuizHistory);
-      this.wrongQuestionsCache = this.normalizeWrongQuestions(mergedWrongQuestions);
+      this.wrongQuestionsCache =
+        this.normalizeWrongQuestions(mergedWrongQuestions);
 
       await Promise.all([
         storageService.saveQuizHistory(this.quizHistoryCache),
@@ -430,7 +446,9 @@ class DataService {
       ]);
       this.emitLearningChanged();
 
-      const cloudQuizMap = new Map((cloud.quizHistory || []).map((q) => [q.id, q]));
+      const cloudQuizMap = new Map(
+        (cloud.quizHistory || []).map((q) => [q.id, q]),
+      );
       for (const item of this.quizHistoryCache) {
         const remote = cloudQuizMap.get(item.id);
         const cloudTs = toMillis(remote?.updatedAt || remote?.timestamp, 0);
@@ -441,14 +459,23 @@ class DataService {
       }
 
       const cloudWrongMap = new Map(
-        (cloud.wrongQuestions || []).map((q) => [q.id || buildWrongQuestionId(q), q]),
+        (cloud.wrongQuestions || []).map((q) => [
+          q.id || buildWrongQuestionId(q),
+          q,
+        ]),
       );
       for (const item of this.wrongQuestionsCache) {
         const remote = cloudWrongMap.get(item.id);
-        const cloudTs = toMillis(remote?.updatedAt || remote?.nextReviewTime, 0);
+        const cloudTs = toMillis(
+          remote?.updatedAt || remote?.nextReviewTime,
+          0,
+        );
         const localTs = toMillis(item.updatedAt || item.nextReviewTime, 0);
         if (!remote || localTs > cloudTs) {
-          await learningSyncService.upsertCloudWrongQuestionItem(user.uid, item);
+          await learningSyncService.upsertCloudWrongQuestionItem(
+            user.uid,
+            item,
+          );
         }
       }
 

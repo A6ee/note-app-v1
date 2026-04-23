@@ -16,11 +16,35 @@ const REQUEST_HARD_BLOCK_MAX = 120;
 const PROMPT_MAX_LENGTH = 12000;
 const SCHEMA_MAX_LENGTH = 50000;
 const rateLimitBuckets = new Map();
-const BOT_UA_PATTERN = /(bot|crawler|spider|scraper|curl|wget|python-requests|httpclient)/i;
+const BOT_UA_PATTERN =
+  /(bot|crawler|spider|scraper|curl|wget|python-requests|httpclient)/i;
 
 function getClientIp(req) {
   const forwardedFor = String(req.headers["x-forwarded-for"] || "");
-  return forwardedFor.split(",")[0].trim() || req.socket?.remoteAddress || "unknown";
+  return (
+    forwardedFor.split(",")[0].trim() || req.socket?.remoteAddress || "unknown"
+  );
+}
+
+function isLocalDevelopmentRequest(req) {
+  const host = String(req.headers.host || "").toLowerCase();
+  const ip = String(getClientIp(req) || "").toLowerCase();
+  if (
+    host.includes("localhost") ||
+    host.includes("127.0.0.1") ||
+    host.includes("[::1]")
+  ) {
+    return true;
+  }
+  if (
+    ip === "127.0.0.1" ||
+    ip === "::1" ||
+    ip.endsWith(":127.0.0.1") ||
+    ip.endsWith(":0:0:0:0:0:0:0:1")
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function getRedisConfig() {
@@ -31,7 +55,9 @@ function getRedisConfig() {
 }
 
 async function redisCall(baseUrl, token, command, ...args) {
-  const encoded = [command, ...args].map((v) => encodeURIComponent(String(v))).join("/");
+  const encoded = [command, ...args]
+    .map((v) => encodeURIComponent(String(v)))
+    .join("/");
   const url = `${baseUrl}/${encoded}`;
   const response = await fetch(url, {
     method: "POST",
@@ -168,7 +194,9 @@ async function checkRateLimitPersistent(req) {
 
   const retryAfter = Math.max(
     1,
-    Math.ceil((REQUEST_LIMIT_WINDOW_MS - (now % REQUEST_LIMIT_WINDOW_MS)) / 1000),
+    Math.ceil(
+      (REQUEST_LIMIT_WINDOW_MS - (now % REQUEST_LIMIT_WINDOW_MS)) / 1000,
+    ),
   );
 
   if (count > REQUEST_HARD_BLOCK_MAX) {
@@ -191,6 +219,18 @@ async function checkRateLimitPersistent(req) {
 }
 
 async function checkRateLimit(req) {
+  // Keep production limits strict, but avoid blocking local feature testing.
+  // Local requests bypass by default; set DISABLE_RATE_LIMIT_LOCAL=false to force-enable limits locally.
+  const disableRateLimitLocal = String(
+    process.env.DISABLE_RATE_LIMIT_LOCAL || "",
+  ).toLowerCase();
+  const shouldBypassLocalRateLimit =
+    isLocalDevelopmentRequest(req) && disableRateLimitLocal !== "false";
+
+  if (shouldBypassLocalRateLimit) {
+    return { allowed: true, retryAfter: 0, reason: "dev-local-bypass" };
+  }
+
   try {
     const persistent = await checkRateLimitPersistent(req);
     if (persistent) {
@@ -215,7 +255,9 @@ export default async function handler(req, res) {
   }
 
   if (!isContentTypeJson(req)) {
-    return res.status(415).json({ error: "Content-Type must be application/json" });
+    return res
+      .status(415)
+      .json({ error: "Content-Type must be application/json" });
   }
 
   if (isBlockedUserAgent(req)) {
@@ -279,6 +321,10 @@ export default async function handler(req, res) {
 
       const data = await googleRes.json().catch(() => ({}));
       if (googleRes.ok) return res.status(200).json(data);
+
+      if (googleRes.status === 503) {
+        res.setHeader("Retry-After", "60");
+      }
 
       lastStatus = googleRes.status;
       lastData = data;

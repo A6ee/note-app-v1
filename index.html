@@ -322,6 +322,14 @@
             00:00
           </div>
           <div
+            id="record-recovery-status"
+            class="hidden mb-4 px-4 py-2 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 text-xs font-black tracking-wide"
+            aria-live="polite"
+          >
+            收音暫時中斷，正在恢復...
+          </div>
+
+          <div
             id="live-transcript"
             class="text-xs text-[#13B5B1] font-bold mb-6 text-center px-6 min-h-[3rem] max-h-[8rem] overflow-y-auto italic leading-relaxed no-scrollbar"
             aria-live="polite"
@@ -511,6 +519,14 @@
                 📚 擴充建議
               </button>
             </div>
+            <button
+              id="retry-summary-btn"
+              type="button"
+              data-action="retry-summary"
+              class="hidden w-full py-3 bg-amber-50 border border-amber-300 text-amber-700 rounded-2xl text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
+            >
+              重試生成摘要
+            </button>
           </div>
         </div>
 

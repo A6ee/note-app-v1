@@ -22,10 +22,12 @@ let lastActivePageId = "page-home";
 
 let timerInterval;
 let seconds = 0;
+let recordingStartedAtMs = 0;
 let recognition;
 let fullTranscript = "";
 let isRecording = false;
 let isGeneratingSummary = false;
+let isRetryingSummary = false;
 let isRecognitionStarting = false;
 let isStoppingRecognition = false;
 
@@ -33,20 +35,49 @@ let recognitionRestartTimer = null;
 let recognitionEndFailCount = 0;
 let lastInterim = "";
 let finalizedSpeechTimeline = [];
+let lastTimelineAssignedSecond = -1;
+let pendingSpeechAnchorSecond = null;
 let lastResultAt = 0;
 let lastRestartAt = 0;
 let lastErrorCode = "";
 let noResultWatchdogTimer = null;
 let startTimeoutTimer = null;
+let isRecoveryHintVisible = false;
+let recoveryAckTimer = null;
+let recoveryHideTimer = null;
+let recoveryAttemptToken = 0;
+let awaitingRecoveryAckToken = 0;
+let recoveryRestartShownAt = 0;
+let lastWatchdogObservedResultAt = 0;
+let watchdogMissWhileSpeakingCount = 0;
+let vadAudioContext = null;
+let vadStream = null;
+let vadAnalyser = null;
+let vadSourceNode = null;
+let vadSampleTimer = null;
+let vadReady = false;
+let vadNoiseFloorRms = 0.004;
+let vadLastVoiceAt = 0;
 
 const TEMP_TRANSCRIPT_KEY = "temp_transcript";
 const RECOGNITION_MAX_RESTARTS = 5;
-const NO_RESULT_TIMEOUT_MS = 20000;
-const WATCHDOG_INTERVAL_MS = 2000;
-const RESTART_GRACE_MS = 5000;
+const NO_RESULT_TIMEOUT_MS = 12000;
+const WATCHDOG_INTERVAL_MS = 1500;
+const RESTART_GRACE_MS = 2500;
 const HARD_REBUILD_AFTER_FAILS = 3;
 const PERIODIC_TRANSCRIPT_PERSIST_MS = 5000;
 const RECOGNITION_START_TIMEOUT_MS = 3000;
+const ONEND_RESTART_DELAY_MS = 500;
+const RECOVERY_MONITOR_DELAY_MS = 6000;
+const RECOVERY_SUCCESS_AUTO_HIDE_MS = 1000;
+const RECOVERY_RESTART_MIN_VISIBLE_MS = 700;
+const VAD_SAMPLE_INTERVAL_MS = 250;
+const VAD_CALIBRATION_MS = 1500;
+const VAD_SPEECH_HOLD_MS = 1800;
+const VAD_MIN_RMS = 0.012;
+const VAD_NOISE_MULTIPLIER = 2.2;
+const TIMELINE_MERGE_GAP_SECONDS = 1;
+const TIMELINE_SHORT_TEXT_MERGE_THRESHOLD = 24;
 
 const STORAGE_KEYS = {
   QUIZ_HISTORY: "president_quiz_history",
@@ -55,6 +86,8 @@ const STORAGE_KEYS = {
   SETTINGS: "president_settings",
   TEMP_TRANSCRIPT: TEMP_TRANSCRIPT_KEY,
 };
+
+const SAFARI_RECORDING_HINT_SESSION_KEY = "safari_recording_hint_shown";
 
 const storage = localforage.createInstance({
   name: "MemorAIze",
@@ -427,6 +460,7 @@ const DEFAULT_APP_SETTINGS = {
 };
 
 let appSettings = { ...DEFAULT_APP_SETTINGS };
+let isAuthInProgress = false;
 
 const animalAvatars = [
   "Fox",
@@ -502,9 +536,103 @@ function updateAuthUI() {
   if (signOutBtn) signOutBtn.classList.toggle("hidden", !user);
 }
 
-async function signInWithGoogleFlow() {
+function isStandalonePwaMode() {
+  const standaloneByMedia = window.matchMedia?.(
+    "(display-mode: standalone)",
+  )?.matches;
+  const standaloneByNavigator = window.navigator?.standalone === true;
+  return !!(standaloneByMedia || standaloneByNavigator);
+}
+
+function isLikelyMobileDevice() {
+  const ua = String(window.navigator?.userAgent || "").toLowerCase();
+  return /android|iphone|ipad|ipod|mobile/i.test(ua);
+}
+
+function isAppleDevice() {
+  const ua = String(window.navigator?.userAgent || "").toLowerCase();
+  const platform = String(window.navigator?.platform || "").toLowerCase();
+  const touchPoints = Number(window.navigator?.maxTouchPoints || 0);
+  return (
+    /iphone|ipad|ipod|macintosh|mac os x/i.test(ua) ||
+    /mac/i.test(platform) ||
+    (platform === "macintel" && touchPoints > 1)
+  );
+}
+
+function isSafariBrowser() {
+  const ua = String(window.navigator?.userAgent || "");
+  const isSafariEngine = /Safari\//.test(ua);
+  const isOtherBrowser =
+    /(Chrome|Chromium|CriOS|FxiOS|Firefox|Edg|EdgiOS|OPR|Opera|SamsungBrowser)/.test(
+      ua,
+    );
+  return isSafariEngine && !isOtherBrowser;
+}
+
+function isInAppWebView() {
+  const ua = String(window.navigator?.userAgent || "").toLowerCase();
+  return /(line|fbav|fban|instagram|micromessenger|wv)/i.test(ua);
+}
+
+function shouldShowSafariRecordingHint() {
+  if (!isAppleDevice() || !isSafariBrowser()) return false;
   try {
-    await dataService.signInWithGoogle();
+    return (
+      window.sessionStorage?.getItem(SAFARI_RECORDING_HINT_SESSION_KEY) !== "1"
+    );
+  } catch {
+    return true;
+  }
+}
+
+function showSafariRecordingHintIfNeeded() {
+  if (!shouldShowSafariRecordingHint()) return;
+
+  try {
+    window.sessionStorage?.setItem(SAFARI_RECORDING_HINT_SESSION_KEY, "1");
+  } catch {
+    // Ignore sessionStorage failures and still show the hint for this load.
+  }
+
+  alert(
+    "目前 Safari 對語音辨識的支援較不穩定，若遇到中斷建議改用 Chrome 以獲得較穩定的錄音與整理效果。",
+  );
+}
+
+function shouldPreferRedirectAuth() {
+  return isStandalonePwaMode() || isLikelyMobileDevice() || isInAppWebView();
+}
+
+async function signInWithGoogleFlow() {
+  if (isAuthInProgress) return;
+
+  const inApp = isInAppWebView();
+  const preferRedirect = shouldPreferRedirectAuth();
+
+  if (inApp) {
+    alert(
+      "目前偵測為 App 內建瀏覽器，登入可能失敗。建議點選右上角改用 Safari/Chrome 開啟後再登入。",
+    );
+  }
+
+  isAuthInProgress = true;
+  const signInBtn = safeEl("auth-signin-btn");
+  if (signInBtn) {
+    signInBtn.disabled = true;
+    signInBtn.style.opacity = "0.6";
+  }
+
+  try {
+    const user = await dataService.signInWithGoogle({ preferRedirect });
+
+    if (!user?.uid) {
+      if (preferRedirect) {
+        alert("正在前往 Google 登入頁面...");
+      }
+      return;
+    }
+
     notesLibrary = dataService.getNotes();
     currentNoteData = notesLibrary?.[0] || null;
     updateAuthUI();
@@ -516,6 +644,12 @@ async function signInWithGoogleFlow() {
   } catch (err) {
     console.error("[ui] sign-in failed:", err);
     alert(`Google 登入失敗：${err.message || "未知錯誤"}`);
+  } finally {
+    isAuthInProgress = false;
+    if (signInBtn) {
+      signInBtn.disabled = false;
+      signInBtn.style.opacity = "1";
+    }
   }
 }
 
@@ -532,6 +666,10 @@ async function signOutFlow() {
 
 async function initializePersistedState() {
   mountAuthControlsIfNeeded();
+
+  dataService.onAuthChanged(() => {
+    updateAuthUI();
+  });
 
   const loadedNotes = await dataService.init(DEFAULT_NOTES_LIBRARY);
   notesLibrary =
@@ -766,6 +904,212 @@ function stopNoResultWatchdog() {
   noResultWatchdogTimer = null;
 }
 
+function clearRecoveryAckTimer() {
+  if (!recoveryAckTimer) return;
+  clearTimeout(recoveryAckTimer);
+  recoveryAckTimer = null;
+}
+
+function clearRecoveryHideTimer() {
+  if (!recoveryHideTimer) return;
+  clearTimeout(recoveryHideTimer);
+  recoveryHideTimer = null;
+}
+
+function showRecoveryHint(text, autoHideMs = 0) {
+  const recoveryEl = safeEl("record-recovery-status");
+  if (recoveryEl) {
+    recoveryEl.innerText = text;
+    recoveryEl.classList.remove("hidden");
+  }
+
+  isRecoveryHintVisible = true;
+  clearRecoveryHideTimer();
+
+  if (autoHideMs > 0) {
+    recoveryHideTimer = setTimeout(() => {
+      const el = safeEl("record-recovery-status");
+      if (el) el.classList.add("hidden");
+      isRecoveryHintVisible = false;
+      recoveryHideTimer = null;
+    }, autoHideMs);
+  }
+}
+
+function hideRecoveryHint() {
+  clearRecoveryHideTimer();
+  const recoveryEl = safeEl("record-recovery-status");
+  if (recoveryEl) recoveryEl.classList.add("hidden");
+  isRecoveryHintVisible = false;
+}
+
+function markRecoveryMonitoring() {
+  if (awaitingRecoveryAckToken !== 0) return;
+  showRecoveryHint("收音暫時中斷，正在重新連線...");
+}
+
+function markRecoveryRestarting(message = "收音暫時中斷，正在重新連線...") {
+  recoveryAttemptToken += 1;
+  awaitingRecoveryAckToken = recoveryAttemptToken;
+  recoveryRestartShownAt = Date.now();
+  showRecoveryHint(message);
+}
+
+function markRecoveryRestarted() {
+  if (awaitingRecoveryAckToken === 0) return;
+  awaitingRecoveryAckToken = 0;
+  clearRecoveryAckTimer();
+  const elapsed = Date.now() - recoveryRestartShownAt;
+  const remain = Math.max(0, RECOVERY_RESTART_MIN_VISIBLE_MS - elapsed);
+
+  if (remain > 0) {
+    setTimeout(() => {
+      if (!isRecording) return;
+      showRecoveryHint("收音已恢復", RECOVERY_SUCCESS_AUTO_HIDE_MS);
+    }, remain);
+    return;
+  }
+
+  showRecoveryHint("收音已恢復", RECOVERY_SUCCESS_AUTO_HIDE_MS);
+}
+
+function resetRecoveryState() {
+  awaitingRecoveryAckToken = 0;
+  recoveryAttemptToken = 0;
+  recoveryRestartShownAt = 0;
+  watchdogMissWhileSpeakingCount = 0;
+  clearRecoveryAckTimer();
+  hideRecoveryHint();
+}
+
+async function startVoiceActivityMonitor() {
+  stopVoiceActivityMonitor();
+
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  const canUseVAD = !!(
+    AudioContextCtor && navigator.mediaDevices?.getUserMedia
+  );
+  if (!canUseVAD) {
+    vadReady = false;
+    return;
+  }
+
+  // 行動端 Web Speech API 已佔用麥克風，避免 VAD 再開第二條音訊流。
+  // 部分手機瀏覽器與 PWA 無法穩定同時持有兩條 getUserMedia 流，會導致偶發斷流或權限互斥。
+  // vadReady = false 時 isLikelySpeakingNow() 回傳 true，watchdog 維持既有安全 fallback 行為。
+  if (isLikelyMobileDevice()) {
+    vadReady = false;
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
+
+    if (!isRecording) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+
+    vadAudioContext = new AudioContextCtor();
+    if (vadAudioContext.state === "suspended") {
+      await vadAudioContext.resume().catch(() => {});
+    }
+
+    vadStream = stream;
+    vadSourceNode = vadAudioContext.createMediaStreamSource(stream);
+    vadAnalyser = vadAudioContext.createAnalyser();
+    vadAnalyser.fftSize = 1024;
+    vadAnalyser.smoothingTimeConstant = 0.65;
+    vadSourceNode.connect(vadAnalyser);
+
+    const samples = new Float32Array(vadAnalyser.fftSize);
+    const calibration = [];
+    const startAt = Date.now();
+    vadReady = false;
+    vadNoiseFloorRms = 0.004;
+    vadLastVoiceAt = 0;
+
+    vadSampleTimer = setInterval(() => {
+      if (!vadAnalyser) return;
+
+      vadAnalyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (let i = 0; i < samples.length; i += 1) {
+        const v = samples[i];
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / samples.length);
+      const now = Date.now();
+
+      if (!vadReady) {
+        calibration.push(rms);
+        if (now - startAt >= VAD_CALIBRATION_MS) {
+          const avg =
+            calibration.reduce((acc, v) => acc + v, 0) /
+            Math.max(1, calibration.length);
+          vadNoiseFloorRms = Math.max(0.003, avg || 0.003);
+          vadReady = true;
+        }
+      }
+
+      const threshold = Math.max(
+        VAD_MIN_RMS,
+        vadNoiseFloorRms * VAD_NOISE_MULTIPLIER,
+      );
+      if (rms >= threshold) {
+        vadLastVoiceAt = now;
+      }
+    }, VAD_SAMPLE_INTERVAL_MS);
+  } catch (err) {
+    // Fallback to legacy behavior when VAD init fails.
+    vadReady = false;
+    console.warn("VAD init failed, fallback to result-only watchdog:", err);
+  }
+}
+
+function stopVoiceActivityMonitor() {
+  if (vadSampleTimer) {
+    clearInterval(vadSampleTimer);
+    vadSampleTimer = null;
+  }
+
+  if (vadSourceNode) {
+    try {
+      vadSourceNode.disconnect();
+    } catch (_) {}
+    vadSourceNode = null;
+  }
+
+  vadAnalyser = null;
+
+  if (vadStream) {
+    vadStream.getTracks().forEach((track) => track.stop());
+    vadStream = null;
+  }
+
+  if (vadAudioContext) {
+    void vadAudioContext.close().catch(() => {});
+    vadAudioContext = null;
+  }
+
+  vadReady = false;
+  vadNoiseFloorRms = 0.004;
+  vadLastVoiceAt = 0;
+}
+
+function isLikelySpeakingNow(now = Date.now()) {
+  // If VAD is unavailable, keep legacy restart behavior for safety.
+  if (!vadReady) return true;
+  return now - vadLastVoiceAt <= VAD_SPEECH_HOLD_MS;
+}
+
 function hardRebuildRecognition() {
   // Rebuild recognition instance after repeated failures to recover bad internal state.
   recognition = null;
@@ -777,15 +1121,34 @@ function hardRebuildRecognition() {
 
 function startNoResultWatchdog() {
   stopNoResultWatchdog();
+  lastWatchdogObservedResultAt = lastResultAt;
+  watchdogMissWhileSpeakingCount = 0;
 
   noResultWatchdogTimer = setInterval(() => {
     if (!isRecording || isStoppingRecognition || !recognition) return;
 
     const now = Date.now();
-    if (now - lastResultAt <= NO_RESULT_TIMEOUT_MS) return;
+    const likelySpeaking = isLikelySpeakingNow(now);
+    const hasTranscriptUpdated = lastResultAt > lastWatchdogObservedResultAt;
+    lastWatchdogObservedResultAt = lastResultAt;
+
+    // Immediate restart path: speaking is likely, but transcript stream is stale.
+    if (!likelySpeaking) {
+      watchdogMissWhileSpeakingCount = 0;
+      return;
+    }
+    if (hasTranscriptUpdated) {
+      watchdogMissWhileSpeakingCount = 0;
+      return;
+    }
+
+    watchdogMissWhileSpeakingCount += 1;
+    if (watchdogMissWhileSpeakingCount < 2) return;
     if (now - lastRestartAt <= RESTART_GRACE_MS) return;
+    watchdogMissWhileSpeakingCount = 0;
 
     // Soft restart only: stop then start, and persist first to reduce loss on interruption.
+    markRecoveryRestarting("收音暫時中斷，正在重新連線...");
     persistTempTranscript(getTranscriptText());
     stopRecognitionSafely();
 
@@ -795,7 +1158,7 @@ function startNoResultWatchdog() {
       if (!ok) {
         console.warn("Watchdog soft restart start() failed");
       }
-    }, 700);
+    }, ONEND_RESTART_DELAY_MS);
   }, WATCHDOG_INTERVAL_MS);
 }
 
@@ -891,6 +1254,92 @@ function splitTranscriptIntoReadableChunks(text, maxChars = 28, minChars = 14) {
   return chunks;
 }
 
+function getElapsedRecordingSeconds() {
+  if (recordingStartedAtMs > 0) {
+    return Math.max(0, Math.floor((Date.now() - recordingStartedAtMs) / 1000));
+  }
+  return Math.max(0, Math.floor(seconds || 0));
+}
+
+function mergeTimelineSegmentsForDisplay(timelineSegments) {
+  const merged = [];
+
+  timelineSegments.forEach((item) => {
+    if (merged.length === 0) {
+      merged.push({ second: item.second, text: item.text });
+      return;
+    }
+
+    const prev = merged[merged.length - 1];
+    const gap = item.second - prev.second;
+    const shouldMergeSameSecond = gap === 0;
+    const shouldMergeDenseShort =
+      gap > 0 &&
+      gap <= TIMELINE_MERGE_GAP_SECONDS &&
+      prev.text.length < TIMELINE_SHORT_TEXT_MERGE_THRESHOLD;
+
+    if (shouldMergeSameSecond || shouldMergeDenseShort) {
+      prev.text = `${prev.text} ${item.text}`.replace(/\s+/g, " ").trim();
+      return;
+    }
+
+    merged.push({ second: item.second, text: item.text });
+  });
+
+  return merged;
+}
+
+function appendFinalChunksToTimeline(
+  finalChunks,
+  currentSecond,
+  anchorSecond = null,
+) {
+  if (!Array.isArray(finalChunks) || finalChunks.length === 0) return;
+
+  const lastItemSecond =
+    finalizedSpeechTimeline.length > 0
+      ? Math.floor(
+          Number(
+            finalizedSpeechTimeline[finalizedSpeechTimeline.length - 1]?.second,
+          ) || -1,
+        )
+      : -1;
+  const monotonicBase = Math.max(lastTimelineAssignedSecond, lastItemSecond);
+
+  const safeCurrentSecond = Math.max(0, Math.floor(Number(currentSecond) || 0));
+  const safeAnchorSecond = Number.isFinite(Number(anchorSecond))
+    ? Math.max(0, Math.floor(Number(anchorSecond)))
+    : null;
+
+  const spreadStart =
+    safeAnchorSecond === null
+      ? Math.max(
+          0,
+          safeCurrentSecond - finalChunks.length + 1,
+          monotonicBase + 1,
+        )
+      : Math.max(
+          0,
+          Math.min(safeAnchorSecond, safeCurrentSecond),
+          monotonicBase + 1,
+        );
+  const spreadEnd = Math.max(spreadStart, safeCurrentSecond);
+  const spreadRange = spreadEnd - spreadStart;
+  const denom = Math.max(1, finalChunks.length - 1);
+  let cursorSecond = monotonicBase;
+
+  finalChunks.forEach((chunk, idx) => {
+    const mapped = spreadStart + Math.round((idx * spreadRange) / denom);
+    const sec = Math.max(cursorSecond + 1, mapped);
+    finalizedSpeechTimeline.push({
+      second: sec,
+      text: chunk,
+    });
+    cursorSecond = sec;
+  });
+  lastTimelineAssignedSecond = cursorSecond;
+}
+
 function initRecognition() {
   if (!("webkitSpeechRecognition" in window)) {
     console.warn("This browser does not support webkitSpeechRecognition.");
@@ -911,26 +1360,47 @@ function initRecognition() {
     recognitionEndFailCount = 0;
     lastRestartAt = Date.now();
     lastErrorCode = "";
+    markRecoveryRestarted();
+    if (isRecording && recordingStartedAtMs === 0) {
+      recordingStartedAtMs = Date.now();
+    }
   };
 
   recognition.onresult = (event) => {
-    lastResultAt = Date.now();
+    if (awaitingRecoveryAckToken === 0 && isRecoveryHintVisible) {
+      hideRecoveryHint();
+    }
+    const prevFullLen = fullTranscript.length;
+    const prevInterim = lastInterim;
     let interim = "";
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       const piece = event.results[i][0]?.transcript || "";
       if (event.results[i].isFinal) {
         fullTranscript += piece;
         const finalChunks = splitTranscriptIntoReadableChunks(piece);
-        finalChunks.forEach((chunk) => {
-          finalizedSpeechTimeline.push({
-            second: Math.max(0, Math.floor(seconds || 0)),
-            text: chunk,
-          });
-        });
-      } else interim += piece;
+        const anchorSecond = pendingSpeechAnchorSecond;
+        appendFinalChunksToTimeline(
+          finalChunks,
+          getElapsedRecordingSeconds(),
+          anchorSecond,
+        );
+        pendingSpeechAnchorSecond = null;
+        //console.log("finalizedSpeechTimeline seconds:", finalizedSpeechTimeline.map((item, index) => ({ index, second: item.second })));
+      } else {
+        interim += piece;
+        if (piece.trim() && pendingSpeechAnchorSecond === null) {
+          pendingSpeechAnchorSecond = getElapsedRecordingSeconds();
+        }
+      }
     }
 
     lastInterim = interim;
+    // Only advance watchdog clock when transcript content actually changes.
+    // Chrome fires onresult repeatedly with unchanged interim text when recognition
+    // is stuck, which would falsely reset the watchdog and suppress recovery restart.
+    if (fullTranscript.length > prevFullLen || lastInterim !== prevInterim) {
+      lastResultAt = Date.now();
+    }
     const displayText = getTranscriptText();
     persistTempTranscript(displayText);
 
@@ -994,6 +1464,14 @@ function initRecognition() {
 
     recognitionRestartTimer = setTimeout(() => {
       recognitionEndFailCount += 1;
+      // Chrome periodically auto-ends the session even when recognition is healthy
+      // (typically every ~60s). Only surface the recovery hint when transcript was
+      // already stale before onend fired; normal periodic restarts should be silent.
+      // The watchdog is the primary path for showing hints during active stalls.
+      const transcriptIsStale = Date.now() - lastResultAt > RESTART_GRACE_MS;
+      if (transcriptIsStale) {
+        markRecoveryRestarting("收音暫時中斷，正在重新連線...");
+      }
       const shouldHardRebuild =
         recognitionEndFailCount >= HARD_REBUILD_AFTER_FAILS;
       if (shouldHardRebuild) {
@@ -1006,18 +1484,35 @@ function initRecognition() {
           `Recognition restart attempt ${recognitionEndFailCount}/${RECOGNITION_MAX_RESTARTS} failed`,
         );
       }
-    }, 700);
+    }, ONEND_RESTART_DELAY_MS);
   };
 }
 
-function startRecordPage() {
+async function startRecordPage() {
   if (isRecording || isGeneratingSummary) return;
 
+  // --- 新增：錄音前權限檢查 ---
+  if (!navigator.mediaDevices?.getUserMedia) {
+    alert("目前瀏覽器不支援錄音裝置存取（getUserMedia）。");
+    return;
+  }
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch (err) {
+    alert("麥克風權限被拒絕，請允許麥克風存取後再試一次。");
+    return;
+  }
+
+  // 權限確認後才正式啟動錄音流程
   initRecognition();
 
   fullTranscript = "";
   lastInterim = "";
   finalizedSpeechTimeline = [];
+  lastTimelineAssignedSecond = -1;
+  pendingSpeechAnchorSecond = null;
+  recordingStartedAtMs = 0;
+  resetRecoveryState();
   persistTempTranscript("");
   seconds = 0;
   isRecording = true;
@@ -1025,11 +1520,16 @@ function startRecordPage() {
   lastErrorCode = "";
   lastResultAt = Date.now();
   lastRestartAt = Date.now();
+  lastWatchdogObservedResultAt = lastResultAt;
+  isRecoveryHintVisible = false;
+  stopVoiceActivityMonitor();
 
   const timerEl = safeEl("record-timer");
   const liveEl = safeEl("live-transcript");
+  const recoveryEl = safeEl("record-recovery-status");
   if (timerEl) timerEl.innerText = "00:00";
   if (liveEl) liveEl.innerText = "正在聽課中...";
+  if (recoveryEl) recoveryEl.classList.add("hidden");
 
   window.navigateTo("page-record");
 
@@ -1044,6 +1544,7 @@ function startRecordPage() {
   }
 
   startNoResultWatchdog();
+  void startVoiceActivityMonitor();
 
   clearInterval(timerInterval);
   timerInterval = setInterval(() => {
@@ -1062,6 +1563,9 @@ function startRecordPage() {
 
 function cancelRecording() {
   isRecording = false;
+  recordingStartedAtMs = 0;
+  resetRecoveryState();
+  stopVoiceActivityMonitor();
   stopNoResultWatchdog();
   clearRecognitionStartTimeout();
   stopRecognitionSafely();
@@ -1104,7 +1608,8 @@ function buildSegmentsFromTranscript(
     : [];
 
   if (timelineSegments.length > 0) {
-    return timelineSegments.map((item) => ({
+    const mergedTimeline = mergeTimelineSegmentsForDisplay(timelineSegments);
+    return mergedTimeline.map((item) => ({
       time: formatSecondsToTimestamp(item.second),
       text: item.text,
     }));
@@ -1148,12 +1653,28 @@ async function stopRecording() {
 
   isGeneratingSummary = true;
   isRecording = false;
+  recordingStartedAtMs = 0;
+  resetRecoveryState();
+  stopVoiceActivityMonitor();
   stopNoResultWatchdog();
   clearRecognitionStartTimeout();
   stopRecognitionSafely();
   clearInterval(timerInterval);
 
-  const finalTranscript = getTranscriptText();
+  const trailingInterim = String(lastInterim || "").trim();
+  const finalTranscript = `${fullTranscript}${trailingInterim}`.trim();
+
+  if (trailingInterim) {
+    const trailingChunks = splitTranscriptIntoReadableChunks(trailingInterim);
+    appendFinalChunksToTimeline(
+      trailingChunks,
+      getElapsedRecordingSeconds(),
+      pendingSpeechAnchorSecond,
+    );
+    fullTranscript = finalTranscript;
+    pendingSpeechAnchorSecond = null;
+    lastInterim = "";
+  }
   persistTempTranscript(finalTranscript || "");
 
   const durationText = safeEl("record-timer")?.innerText || "00:00";
@@ -1165,7 +1686,7 @@ async function stopRecording() {
   const finalDurationText = formatSecondsToTimestamp(totalRecordedSeconds);
 
   if (!finalTranscript) {
-    alert("尚未取得有效逐字稿，請再錄一次。若中途失敗可檢查麥克風權限。");
+    alert("尚未取得有效逐字稿，請再錄一次。");
     window.navigateTo("page-list");
     isGeneratingSummary = false;
     return;
@@ -1173,7 +1694,7 @@ async function stopRecording() {
 
   window.navigateTo("page-loading");
 
-  const prompt = `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。請只根據提供內容整理，不要補充逐字稿中不存在的內容。逐字稿：${finalTranscript}`;
+  const prompt = buildSummaryPromptFromTranscript(finalTranscript);
 
   const speechSegments = buildSegmentsFromTranscript(
     finalTranscript,
@@ -1199,6 +1720,7 @@ async function stopRecording() {
     },
   };
 
+  let result;
   try {
     const data = await callGemini(
       prompt,
@@ -1206,8 +1728,66 @@ async function stopRecording() {
       appSettings.aiStyle || "default",
     );
     const raw = extractAiText(data);
-    const result = normalizeAiNotePayload(safeParseAiJson(raw));
+    result = normalizeAiNotePayload(safeParseAiJson(raw));
+    // Treat an empty sections array as a generation failure.
+    // Gemini occasionally returns a valid JSON skeleton with no actual content
+    // (e.g. sections:[]) when it cannot process the transcript; without this
+    // guard the note would be saved silently with no summary and no alert.
+    if (!result.sections || result.sections.length === 0) {
+      console.warn("AI 回應 sections 為空，視為摘要失敗，導向 fallback。");
+      throw new Error(
+        "AI 未能生成有效筆記內容（sections 為空），可能是逐字稿太短，請再試一次。",
+      );
+    }
+  } catch (err) {
+    // Only enter fallback after callGemini built-in retries are exhausted.
+    console.error("摘要生成最終失敗:", err);
 
+    try {
+      const fallbackSegments =
+        Array.isArray(speechSegments) && speechSegments.length > 0
+          ? speechSegments
+          : [{ time: "00:00", text: finalTranscript }];
+
+      const fallbackNote = {
+        id: `${Date.now()}-fallback`,
+        title: "逐字稿暫存筆記",
+        intro: "AI 摘要失敗，已先保留逐字稿內容。",
+        category: "未分類",
+        date: `${new Date().getMonth() + 1} / ${new Date().getDate()}`,
+        duration: finalDurationText,
+        sections: [],
+        segments: fallbackSegments,
+        rawTranscript: finalTranscript,
+        summaryStatus: "pending",
+        summaryRetryCount: 0,
+        isFavorite: false,
+        isDeleted: false,
+      };
+
+      const nextNotes = await dataService.createNote(fallbackNote);
+      notesLibrary = Array.isArray(nextNotes)
+        ? nextNotes
+        : [fallbackNote, ...notesLibrary];
+      window.loadNoteDetails(fallbackNote.id);
+      void storage.removeItem(STORAGE_KEYS.TEMP_TRANSCRIPT);
+      const reasonText = err?.message ? `\n原因：${err.message}` : "";
+      alert(
+        `AI 摘要失敗，已建立逐字稿暫存筆記。可先查看逐字稿內容。${reasonText}`,
+      );
+    } catch (fallbackErr) {
+      console.error("Fallback note 建立失敗:", fallbackErr);
+      alert(
+        `生成失敗，但逐字稿已為您暫存。\n原因：${err.message || "未知錯誤"}`,
+      );
+      window.navigateTo("page-list");
+    }
+
+    isGeneratingSummary = false;
+    return;
+  }
+
+  try {
     const newNote = {
       ...result,
       id: Date.now().toString(),
@@ -1216,6 +1796,8 @@ async function stopRecording() {
       duration: finalDurationText,
       segments: speechSegments,
       rawTranscript: finalTranscript,
+      summaryStatus: "ready",
+      summaryRetryCount: 0,
       isFavorite: false,
       isDeleted: false,
     };
@@ -1224,15 +1806,169 @@ async function stopRecording() {
     notesLibrary = Array.isArray(nextNotes)
       ? nextNotes
       : [newNote, ...notesLibrary];
-
     window.loadNoteDetails(newNote.id);
     void storage.removeItem(STORAGE_KEYS.TEMP_TRANSCRIPT);
-  } catch (err) {
-    console.error("處理失敗:", err);
-    alert(`生成失敗，但逐字稿已為您暫存。\n原因：${err.message || "未知錯誤"}`);
+  } catch (persistErr) {
+    console.error("摘要成功但筆記儲存失敗:", persistErr);
+    alert(
+      `筆記儲存失敗，但逐字稿已為您暫存。\n原因：${persistErr.message || "未知錯誤"}`,
+    );
     window.navigateTo("page-list");
   } finally {
     isGeneratingSummary = false;
+  }
+  // 包裝錯誤訊息為直白繁體中文
+  function getFriendlySummaryErrorMsg(rawMsg) {
+    if (!rawMsg) return "發生未知錯誤，請稍後再試。";
+    const msg = String(rawMsg).toLowerCase();
+    if (msg.includes("quota") || msg.includes("配額")) {
+      return "AI 配額已用完，請稍後再試或聯絡管理員。";
+    }
+    if (
+      msg.includes("429") ||
+      msg.includes("too many requests") ||
+      msg.includes("頻繁")
+    ) {
+      return "請求過於頻繁，請稍後再試。";
+    }
+    if (
+      msg.includes("503") ||
+      msg.includes("high demand") ||
+      msg.includes("currently experiencing high demand")
+    ) {
+      return "目前伺服器繁忙中，請 60 秒後再嘗試...";
+    }
+    if (msg.includes("timeout") || msg.includes("超時")) {
+      return "AI 回應逾時，請檢查網路或稍後再試。";
+    }
+    if (msg.includes("network")) {
+      return "網路連線異常，請檢查網路後重試。";
+    }
+    if (msg.includes("json") && msg.includes("parse")) {
+      return "AI 回傳格式錯誤，請重試。";
+    }
+    if (
+      msg.includes("api key") ||
+      msg.includes("unauthorized") ||
+      msg.includes("401")
+    ) {
+      return "API 金鑰驗證失敗，請聯絡管理員。";
+    }
+    return rawMsg;
+  }
+
+  // 顯示重試生成摘要的UI
+  function showRetrySummaryUI(transcript, durationText, segments, errorMsg) {
+    window.navigateTo("page-content");
+    // 切換到逐字稿分頁
+    safeEl("tab-transcript").classList.add("bg-[#13B5B1]", "text-white");
+    safeEl("tab-note").classList.remove("bg-[#13B5B1]", "text-white");
+    safeEl("view-note").classList.add("hidden");
+    safeEl("view-transcript").classList.remove("hidden");
+
+    // 顯示逐字稿內容
+    const transcriptContainer = safeEl("transcript-container");
+    if (transcriptContainer) {
+      transcriptContainer.innerHTML = '<div class="timeline-line"></div>';
+      (segments || []).forEach((seg, idx) => {
+        const item = document.createElement("div");
+        item.className = "relative mb-10 pl-8";
+        item.innerHTML = `
+        <div class="timeline-dot ${idx === 0 ? "active" : ""}"></div>
+        <div class="text-[9px] ${idx === 0 ? "text-[#13B5B1]" : "text-gray-300"} font-black mb-1 tracking-wider">${escapeHtml(seg.time || "")}</div>
+        <div class="text-xs ${idx === 0 ? "text-gray-800 font-black bg-[#F0F9F9] -mx-4 px-4 py-2 rounded-2xl shadow-sm border border-[#13B5B1]/5" : "text-gray-400 font-bold"} leading-relaxed">${escapeHtml(seg.text || "")}</div>
+      `;
+        transcriptContainer.appendChild(item);
+      });
+    }
+
+    // 在逐字稿下方顯示重試區塊
+    const retryDiv = document.createElement("div");
+    retryDiv.className =
+      "mt-8 p-6 bg-orange-50 border border-orange-200 rounded-2xl text-center animate-fadeIn";
+    const friendlyMsg = getFriendlySummaryErrorMsg(errorMsg);
+    retryDiv.innerHTML = `
+    <div class="mb-2 text-orange-500 font-black text-sm flex flex-col items-center gap-2">
+      <i class="fas fa-rotate-right text-2xl animate-spin"></i>
+      摘要生成失敗：${escapeHtml(friendlyMsg)}
+    </div>
+    <p class="text-xs text-gray-500 mb-4">逐字稿內容已暫存，您可以直接重新生成摘要，不需再錄音。</p>
+    <button id="retry-summary-btn" class="py-3 px-8 bg-[#13B5B1] text-white rounded-2xl font-black text-xs shadow-md active:scale-95 transition-all">重新生成摘要筆記</button>
+  `;
+    transcriptContainer.appendChild(retryDiv);
+
+    // 綁定重試按鈕事件
+    setTimeout(() => {
+      const btn = document.getElementById("retry-summary-btn");
+      if (btn) {
+        btn.onclick = async () => {
+          showModal(
+            "目前正在幫你重新生成摘要筆記，請稍候片刻...\n\n(如遇到AI流量高峰，可能需多試幾次)",
+          );
+          await retryGenerateSummary(transcript, durationText, segments);
+        };
+      }
+    }, 100);
+  }
+
+  // 重試生成摘要的流程
+  async function retryGenerateSummary(transcript, durationText, segments) {
+    isGeneratingSummary = true;
+    try {
+      const prompt = `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。請只根據提供內容整理，不要補充逐字稿中不存在的內容。逐字稿：${transcript}`;
+      const schema = {
+        type: "OBJECT",
+        properties: {
+          title: { type: "STRING" },
+          intro: { type: "STRING" },
+          sections: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                category: { type: "STRING" },
+                items: { type: "ARRAY", items: { type: "STRING" } },
+              },
+            },
+          },
+        },
+      };
+      const data = await callGemini(
+        prompt,
+        schema,
+        appSettings.aiStyle || "default",
+      );
+      const raw = extractAiText(data);
+      const result = normalizeAiNotePayload(safeParseAiJson(raw));
+      const newNote = {
+        ...result,
+        id: Date.now().toString(),
+        category: "未分類",
+        date: `${new Date().getMonth() + 1} / ${new Date().getDate()}`,
+        duration: durationText,
+        segments: segments,
+        rawTranscript: transcript,
+        isFavorite: false,
+        isDeleted: false,
+      };
+      const nextNotes = await dataService.createNote(newNote);
+      notesLibrary = Array.isArray(nextNotes)
+        ? nextNotes
+        : [newNote, ...notesLibrary];
+      window.loadNoteDetails(newNote.id);
+      void storage.removeItem(STORAGE_KEYS.TEMP_TRANSCRIPT);
+      closeModal();
+    } catch (err) {
+      closeModal();
+      showRetrySummaryUI(
+        transcript,
+        durationText,
+        segments,
+        err.message || "未知錯誤",
+      );
+    } finally {
+      isGeneratingSummary = false;
+    }
   }
 }
 
@@ -1248,10 +1984,25 @@ async function callGemini(
   aiStyle = "default",
   retryCount = 0,
 ) {
+  const OVERLOAD_RETRY_AFTER_SECONDS = 60;
   const MAX_RETRY = 5; // 最多重試 5 次（不含首次）
   const MAX_RETRY_503 = 3; // 503 服務暫時不可用，最多重試 3 次
   const base = Math.pow(2, retryCount) * 1000;
   const jitter = base * (0.7 + Math.random() * 0.6);
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const getRetryAfterSeconds = (
+    headers,
+    fallback = OVERLOAD_RETRY_AFTER_SECONDS,
+  ) => {
+    const raw = headers?.get?.("Retry-After");
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+
+  const buildOverloadMessage = (retryAfter = OVERLOAD_RETRY_AFTER_SECONDS) =>
+    `AI 伺服器目前過載，請稍等 ${retryAfter} 秒後再試。`;
 
   const shouldRetryNetworkError = (err) => {
     // AbortError 代表前端 25s 計時器主動取消，不應重試
@@ -1281,21 +2032,23 @@ async function callGemini(
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 25000);
-
-  const requestBody = {
+  const requestPayload = {
     prompt: prompt,
     aiStyle: styleToUse || "default",
   };
-
-  if (responseSchema) {
-    requestBody.schema = responseSchema;
+  if (
+    responseSchema &&
+    typeof responseSchema === "object" &&
+    !Array.isArray(responseSchema)
+  ) {
+    requestPayload.schema = responseSchema;
   }
 
   try {
     const response = await fetch("/api/gemini", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody), // 改傳送整理好的 requestBody
+      body: JSON.stringify(requestPayload),
       signal: controller.signal,
     });
 
@@ -1304,11 +2057,10 @@ async function callGemini(
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      // 429 限流特殊處理：使用 alert 提示使用者
+      // 429 限流由呼叫端統一提示，避免重複彈窗。
       if (response.status === 429) {
         const retryAfter = response.headers.get("Retry-After") || "60";
         const errorMsg = `請求過於頻繁，請等待 ${retryAfter} 秒後再試。`;
-        alert(errorMsg);
         throw new Error(errorMsg);
       }
 
@@ -1320,8 +2072,14 @@ async function callGemini(
       }
 
       if (shouldRetryStatus(response.status, retryCount)) {
-        await new Promise((r) => setTimeout(r, jitter));
+        await sleep(jitter);
         return callGemini(prompt, responseSchema, styleToUse, retryCount + 1);
+      }
+
+      if (response.status === 503) {
+        throw new Error(
+          buildOverloadMessage(getRetryAfterSeconds(response.headers)),
+        );
       }
 
       const remoteMsg = extractRemoteMessage(data, response.status);
@@ -1334,7 +2092,7 @@ async function callGemini(
   } catch (err) {
     clearTimeout(timeoutId);
     if (retryCount < MAX_RETRY && shouldRetryNetworkError(err)) {
-      await new Promise((r) => setTimeout(r, jitter));
+      await sleep(jitter);
       return callGemini(prompt, responseSchema, styleToUse, retryCount + 1);
     }
     // AbortError：明確告知使用者是超時，而非網路錯誤
@@ -1374,13 +2132,150 @@ function safeParseAiJson(rawText) {
   throw new Error("AI JSON 解析失敗，請重試。");
 }
 
+const S2T_PHRASE_MAP = {
+  讲座: "講座",
+  内容: "內容",
+  回顾: "回顧",
+  计算机: "計算機",
+  核心特性: "核心特性",
+  机密: "機密",
+  环境: "環境",
+  运行: "運行",
+  结构: "結構",
+  总结: "總結",
+  笔记: "筆記",
+  课程: "課程",
+  录音: "錄音",
+  语音: "語音",
+  学习: "學習",
+  资料: "資料",
+  系统: "系統",
+  专业: "專業",
+};
+
+const S2T_CHAR_MAP = {
+  讲: "講",
+  学: "學",
+  习: "習",
+  录: "錄",
+  音: "音",
+  课: "課",
+  程: "程",
+  笔: "筆",
+  记: "記",
+  资: "資",
+  料: "料",
+  内: "內",
+  容: "容",
+  回: "回",
+  顾: "顧",
+  计: "計",
+  算: "算",
+  机: "機",
+  核: "核",
+  心: "心",
+  特: "特",
+  性: "性",
+  高: "高",
+  度: "度",
+  与: "與",
+  先: "先",
+  进: "進",
+  技: "技",
+  术: "術",
+  极: "極",
+  端: "端",
+  运: "運",
+  行: "行",
+  环: "環",
+  境: "境",
+  要: "要",
+  求: "求",
+  绝: "絕",
+  对: "對",
+  零: "零",
+  真: "真",
+  空: "空",
+  发: "發",
+  展: "展",
+  实: "實",
+  验: "驗",
+  效: "效",
+  果: "果",
+  关: "關",
+  键: "鍵",
+  问: "問",
+  题: "題",
+  点: "點",
+  类: "類",
+  别: "別",
+  组: "組",
+  织: "織",
+  专: "專",
+  业: "業",
+  术: "術",
+  语: "語",
+  说: "說",
+  明: "明",
+  这: "這",
+  为: "為",
+  们: "們",
+  该: "該",
+  后: "後",
+  台: "臺",
+  图: "圖",
+  标: "標",
+  准: "準",
+  断: "斷",
+  续: "續",
+  复: "復",
+  杂: "雜",
+  纲: "綱",
+  领: "領",
+  导: "導",
+  简: "簡",
+  转: "轉",
+  换: "換",
+  优: "優",
+  势: "勢",
+  统: "統",
+  结: "結",
+  构: "構",
+  况: "況",
+  态: "態",
+  组: "組",
+  网: "網",
+  络: "絡",
+  讯: "訊",
+  达: "達",
+  释: "釋",
+  读: "讀",
+  写: "寫",
+  边: "邊",
+};
+
+function toTraditionalChinese(input) {
+  let text = String(input || "");
+  if (!text) return "";
+
+  Object.entries(S2T_PHRASE_MAP).forEach(([s, t]) => {
+    text = text.split(s).join(t);
+  });
+
+  return Array.from(text)
+    .map((ch) => S2T_CHAR_MAP[ch] || ch)
+    .join("");
+}
+
 function normalizeAiNotePayload(payload) {
   const sections = Array.isArray(payload?.sections)
     ? payload.sections
         .map((sec) => ({
-          category: String(sec?.category || "未分類重點"),
+          category: toTraditionalChinese(String(sec?.category || "未分類重點")),
           items: Array.isArray(sec?.items)
-            ? sec.items.map((i) => String(i || "")).filter(Boolean)
+            ? sec.items
+                .map((i) => toTraditionalChinese(String(i || "")))
+                .filter(Boolean)
             : [],
         }))
         .filter((sec) => sec.items.length > 0)
@@ -1390,17 +2285,40 @@ function normalizeAiNotePayload(payload) {
     ? payload.segments
         .map((seg) => ({
           time: String(seg?.time || ""),
-          text: String(seg?.text || "").trim(),
+          text: toTraditionalChinese(String(seg?.text || "").trim()),
         }))
         .filter((seg) => seg.text)
     : [];
 
   return {
-    title: String(payload?.title || "").trim() || "新筆記",
-    intro: String(payload?.intro || "").trim() || "尚無摘要",
+    title:
+      toTraditionalChinese(String(payload?.title || "").trim()) || "新筆記",
+    intro:
+      toTraditionalChinese(String(payload?.intro || "").trim()) || "尚無摘要",
     sections,
     segments,
   };
+}
+
+function isTranscriptOnlyNote(note) {
+  if (!note) return false;
+  const hasTranscript = String(note.rawTranscript || "").trim().length > 0;
+  const hasSections = Array.isArray(note.sections) && note.sections.length > 0;
+  return hasTranscript && !hasSections;
+}
+
+function setRetrySummaryButtonVisible(note) {
+  const btn = safeEl("retry-summary-btn");
+  if (!btn) return;
+
+  const shouldShow = isTranscriptOnlyNote(note);
+  btn.classList.toggle("hidden", !shouldShow);
+  btn.disabled = isRetryingSummary;
+  btn.style.opacity = isRetryingSummary ? "0.6" : "1";
+}
+
+function buildSummaryPromptFromTranscript(transcript) {
+  return `你是一位專業筆記助手「Memo助手」。請將這段錄音逐字稿整理成高品質繁體中文筆記 JSON。請只根據提供內容整理，不要補充逐字稿中不存在的內容。無論逐字稿是英文或其他語言，最終輸出（title、intro、sections.category、sections.items）都必須是繁體中文。逐字稿：${transcript}`;
 }
 
 /**
@@ -1498,6 +2416,8 @@ function renderNoteUI(data) {
       transcriptContainer.appendChild(item);
     });
   }
+
+  setRetrySummaryButtonVisible(data);
 }
 
 function noteMatchesFilters(note, searchTermLower = "") {
@@ -1883,6 +2803,118 @@ function editNoteTitle() {
   renderNotesList();
 }
 
+async function retryGenerateSummaryForCurrentNote() {
+  if (!currentNoteData || isRetryingSummary) return;
+
+  const noteId = currentNoteData.id;
+  const note = notesLibrary.find((n) => n.id === noteId) || currentNoteData;
+  if (!isTranscriptOnlyNote(note)) return;
+
+  const transcript = String(note.rawTranscript || "").trim();
+  if (!transcript) {
+    alert("這份筆記沒有可用逐字稿，無法重試摘要。");
+    return;
+  }
+
+  const retryBtn = safeEl("retry-summary-btn");
+  const prevText = retryBtn?.innerText || "";
+  const isRateLimitMessage = (msg) =>
+    /請求過於頻繁|too many requests|429/i.test(String(msg || ""));
+
+  isRetryingSummary = true;
+  if (retryBtn) retryBtn.innerText = "摘要重試中...";
+  setRetrySummaryButtonVisible(note);
+  showModal("✨ Memo助手正在重新生成摘要...");
+  let retryFeedbackMessage = "";
+
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      title: { type: "STRING" },
+      intro: { type: "STRING" },
+      sections: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            category: { type: "STRING" },
+            items: { type: "ARRAY", items: { type: "STRING" } },
+          },
+        },
+      },
+    },
+  };
+
+  try {
+    const prompt = buildSummaryPromptFromTranscript(transcript);
+    const data = await callGemini(
+      prompt,
+      schema,
+      appSettings.aiStyle || "default",
+    );
+    const raw = extractAiText(data);
+    const normalized = normalizeAiNotePayload(safeParseAiJson(raw));
+
+    if (!normalized.sections || normalized.sections.length === 0) {
+      throw new Error(
+        "AI 未能生成有效筆記內容（sections 為空），可能是逐字稿太短，請再試一次。",
+      );
+    }
+
+    const updated = {
+      ...note,
+      title: normalized.title || note.title || "新筆記",
+      intro: normalized.intro || "尚無摘要",
+      sections: normalized.sections,
+      summaryStatus: "ready",
+      summaryRetryCount: Number(note.summaryRetryCount || 0) + 1,
+    };
+
+    const nextNotes = await dataService.updateNote(updated);
+    notesLibrary = Array.isArray(nextNotes) ? nextNotes : notesLibrary;
+    currentNoteData = notesLibrary.find((n) => n.id === updated.id) || updated;
+
+    renderNoteUI(currentNoteData);
+    renderNotesList();
+    renderReviewSelection();
+    renderTrashList();
+    retryFeedbackMessage = "摘要已成功補生成。";
+  } catch (err) {
+    console.error("重試摘要失敗:", err);
+
+    const failedUpdated = {
+      ...note,
+      summaryStatus: "pending",
+      summaryRetryCount: Number(note.summaryRetryCount || 0) + 1,
+    };
+
+    try {
+      const nextNotes = await dataService.updateNote(failedUpdated);
+      notesLibrary = Array.isArray(nextNotes) ? nextNotes : notesLibrary;
+      currentNoteData =
+        notesLibrary.find((n) => n.id === failedUpdated.id) || failedUpdated;
+      renderNoteUI(currentNoteData);
+      renderNotesList();
+      renderReviewSelection();
+      renderTrashList();
+    } catch (persistErr) {
+      console.error("更新重試狀態失敗:", persistErr);
+    }
+
+    if (isRateLimitMessage(err?.message)) {
+      retryFeedbackMessage = getFriendlySummaryErrorMsg(err?.message || "");
+    } else {
+      retryFeedbackMessage = `重試仍失敗，已保留逐字稿。\n原因：${err?.message || "未知錯誤"}`;
+    }
+  } finally {
+    isRetryingSummary = false;
+    closeModal();
+    if (retryBtn) retryBtn.innerText = prevText || "重試生成摘要";
+    setRetrySummaryButtonVisible(currentNoteData);
+    if (retryFeedbackMessage) alert(retryFeedbackMessage);
+  }
+}
+
 function showModal(text) {
   const modal = safeEl("ai-modal");
   const content = safeEl("modal-content");
@@ -2113,13 +3145,34 @@ function permanentClearAll() {
  * Quiz / Expand / Export
  */
 function checkAnswer(btn, selected, correct) {
+  // 取得所有選項按鈕
   const allBtns = btn.parentElement.querySelectorAll("button");
-  const corrIdx = Number(correct);
+  // 取得所有選項文字
+  const options = Array.from(allBtns).map((b) => b.innerText.trim());
+
+  // 修正：確保 correct 一律為 index
+  let corrIdx = correct;
+  if (typeof corrIdx === "string") {
+    // 嘗試將字串答案轉為 index
+    const idx = options.findIndex((opt) => opt === corrIdx.trim());
+    corrIdx = idx !== -1 ? idx : Number(correct); // fallback: 若找不到則嘗試轉數字
+  } else {
+    corrIdx = Number(correct);
+  }
   const isCorrect = Number(selected) === corrIdx;
 
+  // 取得本題的 sourceCategory，若無則 fallback
+
+  let qIdx = Array.from(btn.closest(".mb-8").parentNode.children).indexOf(
+    btn.closest(".mb-8"),
+  );
+  let sourceCategory =
+    currentQuizQuestions?.[qIdx]?.sourceCategory ||
+    currentNoteData?.category ||
+    "綜合複習";
   saveQuizRecord({
     noteId: currentNoteData?.id || "smart-review",
-    category: currentNoteData?.category || "綜合複習",
+    category: sourceCategory,
     type: selectedQuizType,
     isCorrect: isCorrect,
   });
@@ -2135,15 +3188,11 @@ function checkAnswer(btn, selected, correct) {
   if (isCorrect) {
     promoteWrongQuestion(questionText);
   } else {
-    const options = Array.from(
-      questionContainer.querySelectorAll("button.quiz-option"),
-    ).map((b) => b.innerText);
-
     addToWrongQuestions(
       {
         question: questionText,
         options: options,
-        answer: correct,
+        answer: corrIdx,
       },
       selectedQuizType,
     );
@@ -2217,6 +3266,9 @@ function showQuizResult() {
 
 let selectedQuizCount = 3;
 let selectedQuizType = "mc";
+
+// 新增：存放本次 quiz 題目及其 sourceCategory
+let currentQuizQuestions = [];
 
 /**
  * 開啟測驗自定義設定選單
@@ -2329,9 +3381,10 @@ async function generateCustomQuiz(count, type, isReviewMode = false) {
   let contentData = "";
   let loadingMsg = "";
   currentSessionScore = { correct: 0, total: 0 };
+  currentQuizQuestions = [];
   // 1. 決定資料來源
+  let quizCategories;
   if (isReviewMode) {
-    // 智能複習模式：整合所有選取的筆記內容
     const notesToReview = notesLibrary.filter((n) =>
       selectedReviewNotes.has(n.id),
     );
@@ -2342,20 +3395,23 @@ async function generateCustomQuiz(count, type, isReviewMode = false) {
     contentData = notesToReview
       .map(
         (n) =>
-          `標題: ${n.title}\n內容摘要: ${n.intro}\n詳細重點: ${JSON.stringify(n.sections)}`,
+          `標題: ${n.title}\n分類: ${n.category}\n內容摘要: ${n.intro}\n詳細重點: ${JSON.stringify(n.sections)}`,
       )
       .join("\n\n---\n\n");
     loadingMsg = `✨ Memo助手正在整合 ${notesToReview.length} 份筆記，產出 ${count} 題跨領域挑戰...`;
+    quizCategories = [
+      ...new Set(notesToReview.map((n) => n.category).filter(Boolean)),
+    ];
   } else {
-    // 單篇筆記模式
     if (!currentNoteData) return;
-    contentData = `標題: ${currentNoteData.title}\n內容: ${JSON.stringify(currentNoteData.sections)}`;
+    contentData = `標題: ${currentNoteData.title}\n分類: ${currentNoteData.category}\n內容: ${JSON.stringify(currentNoteData.sections)}`;
     loadingMsg = `✨ Memo助手正在針對本篇筆記，精選 ${count} 題考題...`;
+    quizCategories = [currentNoteData.category].filter(Boolean);
   }
 
   showModal(loadingMsg);
 
-  // 2. 根據題型設定 AI 指令
+  // 2. 題型指令
   let typeInstruction = "";
   if (type === "mc") {
     typeInstruction =
@@ -2368,13 +3424,16 @@ async function generateCustomQuiz(count, type, isReviewMode = false) {
       "填空挑戰題。題目中請用 ___ 表示填空處。不要提供 options 陣列 (留空 [])，answer 必須直接填入該填空的正確繁體中文字串。";
   }
 
-  // 3. 建立 Prompt 與 Schema
+  // 3. 建立 Prompt 與 Schema，要求每題回傳 sourceCategory
   const prompt = `你是一位專業教授「MemorAIze」。請根據以下提供的學習內容，出一份高品質的測驗。
 題數：${count} 題
 題型要求：${typeInstruction}
 
+【重要】每題必須回傳 sourceCategory，且只能從本次選入的分類中擇一：${quizCategories.join("、")}
+若是單篇筆記模式，也要回該筆記分類。
+
 請嚴格遵守 JSON 格式回傳，不要包含 \`\`\`json 等標籤：
-{"questions": [{"question": "題目內容", "options": ["選項1","選項2"...], "answer": "索引或字串"}]}
+{"questions": [{"question": "題目內容", "options": ["選項1","選項2"...], "answer": "索引或字串", "sourceCategory": "分類名稱"}]}
 
 學習內容如下：
 ${contentData}`;
@@ -2391,7 +3450,8 @@ ${contentData}`;
           properties: {
             question: { type: "STRING" },
             options: { type: "ARRAY", items: { type: "STRING" } },
-            answer: { type: "STRING" }, // 統一用字串接收，後面再轉型判定
+            answer: { type: "STRING" },
+            sourceCategory: { type: "STRING" },
           },
           required: ["question", "answer"],
         },
@@ -2401,7 +3461,6 @@ ${contentData}`;
   };
 
   try {
-    // 4. 呼叫 Gemini API
     const data = await callGemini(prompt, schema);
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     const cleanJson = String(rawText)
@@ -2410,7 +3469,11 @@ ${contentData}`;
       .trim();
     const result = JSON.parse(cleanJson);
 
-    // 5. 呼叫渲染函數顯示結果 (這個函數我們接下來會實作)
+    // 存下本次 quiz 題目及其 sourceCategory
+    currentQuizQuestions = Array.isArray(result.questions)
+      ? result.questions
+      : [];
+
     renderQuizUI(result, type, count);
   } catch (err) {
     console.error("出題失敗：", err);
@@ -3123,9 +4186,13 @@ Object.assign(window, {
         }
         feedbackEl.classList.remove("hidden");
 
+        let sourceCategory =
+          currentQuizQuestions?.[parseInt(idx)]?.sourceCategory ||
+          currentNoteData?.category ||
+          "綜合複習";
         saveQuizRecord({
           noteId: currentNoteData?.id || "smart-review",
-          category: currentNoteData?.category || "綜合複習",
+          category: sourceCategory,
           type: "fib",
           isCorrect: isCorrect,
         });
@@ -3160,6 +4227,10 @@ Object.assign(window, {
 
       case "expand":
         call(expandContent);
+        break;
+
+      case "retry-summary":
+        void retryGenerateSummaryForCurrentNote();
         break;
 
       case "export-pdf":
@@ -3359,6 +4430,7 @@ window.addEventListener("load", async () => {
   updateHomeGreeting();
   renderCategoryFilters();
   window.navigateTo("page-home");
+  showSafariRecordingHintIfNeeded();
   syncLayoutHeights();
   requestAnimationFrame(syncLayoutHeights);
   setTimeout(syncLayoutHeights, 200);
