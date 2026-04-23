@@ -5,7 +5,7 @@
 # Vercel ����
 .vercel
 
-# �̿�Ҳ�?
+# �̿�Ҳ�?
 node_modules/
 
 # �sĶ����
@@ -17,8 +17,6 @@ build/
 Thumbs.db
 
 # ���ɮשδ�����
-test.txt
-index_old.html
 *old.html
 
 .vs
