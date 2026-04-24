@@ -3254,22 +3254,33 @@ function permanentClearAll() {
  * Quiz / Expand / Export
  */
 function checkAnswer(btn, selected, correct) {
-
   // 取得所有選項按鈕
   const allBtns = btn.parentElement.querySelectorAll("button");
-  // 取得所有選項文字
   const options = Array.from(allBtns).map((b) => b.innerText.trim());
 
-  // 修正：確保 correct 一律為 index
-  let corrIdx = correct;
-  if (typeof corrIdx === "string") {
-    // 嘗試將字串答案轉為 index
-    const idx = options.findIndex(opt => opt === corrIdx.trim());
-    corrIdx = idx !== -1 ? idx : Number(correct); // fallback: 若找不到則嘗試轉數字
-  } else {
-    corrIdx = Number(correct);
-  }
-  const isCorrect = Number(selected) === corrIdx;
+  const normalizeCorrectOptionIndex = (rawCorrect) => {
+    const raw = String(rawCorrect ?? "").trim();
+    if (!raw) return -1;
+
+    if (/^-?\d+$/.test(raw)) {
+      const numeric = Number(raw);
+      if (Number.isFinite(numeric) && numeric >= 0 && numeric < options.length) {
+        return numeric;
+      }
+    }
+
+    const exactIdx = options.findIndex((opt) => opt === raw);
+    if (exactIdx !== -1) return exactIdx;
+
+    const normalizedRaw = raw.toLowerCase();
+    const looseIdx = options.findIndex(
+      (opt) => String(opt || "").trim().toLowerCase() === normalizedRaw,
+    );
+    return looseIdx;
+  };
+
+  const corrIdx = normalizeCorrectOptionIndex(correct);
+  const isCorrect = corrIdx >= 0 && Number(selected) === corrIdx;
 
   // 取得本題的 sourceCategory，若無則 fallback
 
@@ -3301,7 +3312,7 @@ function checkAnswer(btn, selected, correct) {
       {
         question: questionText,
         options: options,
-        answer: corrIdx,
+        answer: corrIdx >= 0 ? corrIdx : String(correct ?? ""),
       },
       selectedQuizType,
     );
@@ -3315,6 +3326,14 @@ function checkAnswer(btn, selected, correct) {
     btn.classList.add("quiz-wrong");
     if (!isNaN(corrIdx) && allBtns[corrIdx]) {
       allBtns[corrIdx].classList.add("quiz-correct");
+    } else if (questionContainer) {
+      let answerHint = questionContainer.querySelector(".quiz-answer-hint");
+      if (!answerHint) {
+        answerHint = document.createElement("div");
+        answerHint.className = "quiz-answer-hint mt-2 text-[10px] font-black text-amber-600";
+        questionContainer.appendChild(answerHint);
+      }
+      answerHint.innerText = "⚠️ 此題正確答案格式異常，請稍後重試產題。";
     }
   }
 
@@ -3543,6 +3562,7 @@ async function generateCustomQuiz(count, type, isReviewMode = false) {
 學習內容如下：
 ${contentData}`;
 
+  const answerSchemaType = type === "fib" ? "STRING" : "NUMBER";
   const schema = {
     type: "OBJECT",
     properties: {
@@ -3555,7 +3575,7 @@ ${contentData}`;
           properties: {
             question: { type: "STRING" },
             options: { type: "ARRAY", items: { type: "STRING" } },
-            answer: { type: "STRING" },
+            answer: { type: answerSchemaType },
             sourceCategory: { type: "STRING" },
           },
           required: ["question", "answer"],
@@ -4264,7 +4284,7 @@ Object.assign(window, {
 
       case "quiz-answer": {
         const selected = Number(el.dataset.selected);
-        const correct = Number(el.dataset.correct);
+        const correct = el.dataset.correct;
         checkAnswer(el, selected, correct);
         break;
       }
